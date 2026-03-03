@@ -14,7 +14,7 @@ export class NotificationController {
   async markAsRead(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       if (!req.user) { res.status(401).json({ message: "Unauthorized" }); return; }
-      res.json(await svc.markAsRead(req.params.id, req.user.id));
+      res.json(await svc.markAsRead(req.params.id as string, req.user.id));
     } catch (e) { next(e); }
   }
 }

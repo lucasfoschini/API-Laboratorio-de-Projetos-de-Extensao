@@ -24,14 +24,18 @@ export class PostService {
     });
     if (!project) throw new HttpError(403, "Apenas membros do projeto podem publicar atualizações");
 
+    const data: any = {
+      title: input.title,
+      content: input.content,
+      projectId,
+      authorId,
+    };
+    if (input.media) {
+      data.media = { create: input.media };
+    }
+
     const post = await prisma.post.create({
-      data: {
-        title: input.title, content: input.content,
-        projectId, authorId,
-        media: input.media
-          ? { create: input.media }
-          : undefined,
-      },
+      data,
       include: POST_INCLUDE,
     });
 

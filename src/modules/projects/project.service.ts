@@ -78,11 +78,62 @@ export class ProjectService {
     return toResponse(project);
   }
 
-  async getAll() {
-    const projects = await prisma.project.findMany({
-      include: INCLUDE, orderBy: { createdAt: "desc" },
-    });
-    return projects.map(toResponse);
+  async getAll(page = 1, limit = 12) {
+    const skip = (page - 1) * limit;
+
+    const select = {
+      id:          true,
+      title:       true,
+      description: true,
+      area:        true,
+      category:    true,
+      status:      true,
+      vacancies:   true,
+      tags:        true,
+      startDate:   true,
+      applicationDeadline: true,
+      createdAt:   true,
+      owner: {
+        select: {
+          id:         true,
+          name:       true,
+          avatar:     true,
+          department: true,
+          institution: true,
+        },
+      },
+      _count: {
+        select: {
+          members:       true,
+          subscriptions: true,
+        },
+      },
+    } as const;
+
+    const [projects, total] = await Promise.all([
+      prisma.project.findMany({
+        select,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      prisma.project.count(),
+    ]);
+
+    return {
+      data:       projects.map((p) => {
+        const { _count, ...rest } = p as any;
+        return {
+          ...rest,
+          enrolled: _count?.members ?? 0,
+          subscribersCount: _count?.subscriptions ?? 0,
+        };
+      }),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   async getById(id: string) {
@@ -101,7 +152,7 @@ export class ProjectService {
       },
     });
     if (!p) throw new HttpError(404, "Projeto não encontrado");
-    return toResponse(p);
+    return toResponse(p); // full include remains unchanged
   }
 
   async update(id: string, input: UpdateInput, userId: string) {

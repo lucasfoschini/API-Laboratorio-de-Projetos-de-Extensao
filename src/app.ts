@@ -1,6 +1,7 @@
 import "dotenv/config";
 import cors from "cors";
 import express from "express";
+import compression from "compression";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { env } from "./config/env";
@@ -39,6 +40,9 @@ app.use(
 // ── Body parsing com limite de tamanho ────────────────────────────────────────
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: false, limit: "1mb" }));
+
+// ── Gzip compression ─────────────────────────────────────────────────────────
+app.use(compression());
 
 // ── Rate limiting global ──────────────────────────────────────────────────────
 app.use(

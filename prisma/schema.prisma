@@ -152,7 +152,7 @@ model Subscription {
 model Post {
   id        String   @id @default(uuid())
   title     String
-  content   String
+  content   String   @db.Text
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -182,7 +182,7 @@ model Publication {
   id         String          @id @default(uuid())
   title      String
   abstract   String
-  content    String?         // texto longo opcional
+  content    String?         @db.Text // texto longo opcional
   type       PublicationType @default(ARTICLE)
   year       Int
   journal    String?

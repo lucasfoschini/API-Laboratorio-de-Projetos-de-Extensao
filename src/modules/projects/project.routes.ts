@@ -4,6 +4,7 @@ import { validate } from "../../middlewares/validate.middleware";
 import { ProjectController } from "./project.controller";
 import { MemberRequestController } from "../member-requests/member-request.controller";
 import { PostController } from "../posts/post.controller";
+import { createPostSchema } from "../posts/post.validation";
 import { createProjectSchema, projectIdParamSchema, updateProjectSchema } from "./project.validation";
 
 const ctrl     = new ProjectController();
@@ -32,7 +33,7 @@ projectRoutes.get ("/:id/join-requests", authMiddleware, (req, res, next) => req
 
 // ── Posts / atualizações ──────────────────────────────────────────────────────
 projectRoutes.get ("/:id/posts",      (req, res, next) => postCtrl.listByProject(req, res, next));
-projectRoutes.post("/:id/posts",      authMiddleware, (req, res, next) => postCtrl.create(req, res, next));
+projectRoutes.post('/:id/posts',      authMiddleware, validate(createPostSchema), (req, res, next) => postCtrl.create(req, res, next));
 
 // ── Sair / Remover membro ─────────────────────────────────────────────────────
 projectRoutes.delete("/:id/leave",             authMiddleware, (req, res, next) => ctrl.leave(req, res, next));

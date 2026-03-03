@@ -10,6 +10,12 @@ interface CreatePostInput {
   media?:  MediaInput[];
 }
 
+interface UpdatePostInput {
+  title?:   string;
+  content?: string;
+  media?:   MediaInput[]; // if provided, replaces existing media list completely
+}
+
 const POST_INCLUDE = {
   author: { select: { id: true, name: true, avatar: true, department: true } },
   media:  true,
@@ -68,6 +74,34 @@ export class PostService {
     const post = await prisma.post.findUnique({ where: { id: postId }, include: POST_INCLUDE });
     if (!post) throw new HttpError(404, "Post não encontrado");
     return post;
+  }
+
+  async update(postId: string, userId: string, input: UpdatePostInput) {
+    const post = await prisma.post.findUnique({
+      where: { id: postId },
+      include: { project: { select: { ownerId: true } } },
+    });
+    if (!post) throw new HttpError(404, "Post não encontrado");
+    const canEdit = post.authorId === userId || post.project.ownerId === userId;
+    if (!canEdit) throw new HttpError(403, "Acesso negado");
+
+    const data: any = {};
+    if (input.title !== undefined) data.title = input.title;
+    if (input.content !== undefined) data.content = input.content;
+    if (input.media !== undefined) {
+      // replace whole media list
+      data.media = {
+        deleteMany: {},
+        create: input.media,
+      };
+    }
+
+    const updated = await prisma.post.update({
+      where: { id: postId },
+      data,
+      include: POST_INCLUDE,
+    });
+    return updated;
   }
 
   async delete(postId: string, userId: string) {

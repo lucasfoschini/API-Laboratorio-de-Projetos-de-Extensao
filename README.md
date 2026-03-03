@@ -70,8 +70,8 @@ CORS_ORIGIN=http://localhost:3000
 | GET | `/projects/:id/subscribe` | ✅ | Verificar status da inscrição |
 | POST | `/projects/:id/join-request` | ✅ | Solicitar entrada no grupo |
 | GET | `/projects/:id/join-requests` | ✅ | Listar solicitações (somente criador) |
-| GET | `/projects/:id/posts` | ❌ | Posts/atualizações do projeto |
-| POST | `/projects/:id/posts` | ✅ | Publicar atualização (somente membros) |
+| GET | `/projects/:id/posts` | ❌ | Posts/atualizações do projeto (cada item inclui `media` array) |
+| POST | `/projects/:id/posts` | ✅ | Publicar atualização (somente membros). `content` livre de limite (antes 512 caracteres). |
 
 ### Solicitações de Membros — `/member-requests`
 
@@ -88,6 +88,7 @@ CORS_ORIGIN=http://localhost:3000
 | Método | Rota | Auth | Descrição |
 |---|---|---|---|
 | GET | `/posts/:postId` | ❌ | Detalhes do post |
+| PATCH | `/posts/:postId` | ✅ | Editar post (autor ou dono do projeto); mídia enviada substitui lista existente |
 | DELETE | `/posts/:postId` | ✅ | Remover post (autor ou criador do projeto) |
 
 ### Publicações — `/publications`
@@ -96,7 +97,7 @@ CORS_ORIGIN=http://localhost:3000
 |---|---|---|---|
 | GET | `/publications` | ❌ | Listar todas as publicações |
 | GET | `/publications/:id` | ❌ | Detalhes da publicação |
-| POST | `/publications` | ✅ | Criar publicação (alunos e professores) |
+| POST | `/publications` | ✅ | Criar publicação (alunos e professores). `content` ampliado para até 5000 caracteres. |
 
 ### Dashboard — `/dashboard`
 

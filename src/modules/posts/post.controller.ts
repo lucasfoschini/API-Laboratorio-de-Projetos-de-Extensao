@@ -26,4 +26,11 @@ export class PostController {
       res.json(await svc.delete(req.params.postId as string, req.user.id));
     } catch (e) { next(e); }
   }
+
+  async update(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) { res.status(401).json({ message: "Unauthorized" }); return; }
+      res.json(await svc.update(req.params.postId as string, req.user.id, req.body));
+    } catch (e) { next(e); }
+  }
 }

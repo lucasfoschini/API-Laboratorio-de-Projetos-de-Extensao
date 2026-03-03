@@ -33,6 +33,26 @@ const USER_SELECT = {
 } as const;
 
 export class AuthService {
+  async updateMe(userId: string, input: {
+    name?: string; department?: string; institution?: string;
+    avatar?: string; bio?: string; linkedin?: string; github?: string; phone?: string;
+  }) {
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(input.name        !== undefined && { name:        input.name }),
+        ...(input.department  !== undefined && { department:  input.department  || null }),
+        ...(input.institution !== undefined && { institution: input.institution || null }),
+        ...(input.avatar      !== undefined && { avatar:      input.avatar      || null }),
+        ...(input.bio         !== undefined && { bio:         input.bio         || null }),
+        ...(input.linkedin    !== undefined && { linkedin:    input.linkedin    || null }),
+        ...(input.github      !== undefined && { github:      input.github      || null }),
+        ...(input.phone       !== undefined && { phone:       input.phone       || null }),
+      },
+      select: USER_SELECT,
+    });
+    return user;
+  }
   async register(input: RegisterInput) {
     const existing = await prisma.user.findUnique({ where: { email: input.email } });
     if (existing) throw new HttpError(409, "E-mail já cadastrado");

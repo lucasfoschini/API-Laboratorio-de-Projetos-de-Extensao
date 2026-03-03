@@ -10,8 +10,12 @@ export class ProjectController {
       res.status(201).json(await svc.create(req.body, req.user.id));
     } catch (e) { next(e); }
   }
-  async getAll(_req: Request, res: Response, next: NextFunction): Promise<void> {
-    try { res.json(await svc.getAll()); } catch (e) { next(e); }
+  async getAll(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const page  = parseInt(String(req.query["page"]  ?? "1"));
+      const limit = parseInt(String(req.query["limit"] ?? "12"));
+      res.json(await svc.getAll(page, limit));
+    } catch (e) { next(e); }
   }
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try { res.json(await svc.getById(req.params.id as string)); } catch (e) { next(e); }

@@ -5,12 +5,36 @@ import { NotificationService } from "../notifications/notification.service";
 
 const VALID_CATEGORIES = Object.values(ProjectCategory) as string[];
 
-const INCLUDE = {
-  owner:   { select: { id: true, name: true, email: true, avatar: true, department: true, institution: true, linkedin: true } },
-  members: { select: { id: true, name: true, email: true, avatar: true, department: true } },
-  _count:  { select: { members: true, subscriptions: true, posts: true, memberRequests: true } },
-  publications: { select: { id: true, title: true, type: true, year: true } },
-} as const;
+// includes as functions to avoid TS readonly spread issue
+function listInclude() {
+  return {
+    owner:  { select: { id: true, name: true, avatar: true, department: true, institution: true } },
+    _count: { select: { members: true, subscriptions: true, posts: true } },
+  } as const;
+}
+
+function detailInclude() {
+  return {
+    owner:        { select: { id: true, name: true, email: true, avatar: true, department: true, institution: true, linkedin: true } },
+    members:      { select: { id: true, name: true, email: true, avatar: true, department: true } },
+    _count:       { select: { members: true, subscriptions: true, posts: true } },
+    publications: { select: { id: true, title: true, type: true, year: true } },
+  } as const;
+}
+
+function detailWithPosts() {
+  return {
+    ...detailInclude(),
+    posts: {
+      orderBy: { createdAt: "desc" as const },
+      take: 5,
+      include: {
+        author: { select: { id: true, name: true, avatar: true } },
+        media: true,
+      },
+    },
+  } as const;
+}
 
 function toResponse(p: any) {
   const { _count, ...rest } = p;
@@ -73,32 +97,73 @@ export class ProjectService {
         ownerId,
         members: { connect: membersToConnect },
       },
-      include: INCLUDE,
+      include: detailInclude(),
     });
     return toResponse(project);
   }
 
-  async getAll() {
-    const projects = await prisma.project.findMany({
-      include: INCLUDE, orderBy: { createdAt: "desc" },
-    });
-    return projects.map(toResponse);
+  async getAll(page = 1, limit = 12) {
+    const skip = (page - 1) * limit;
+
+    const select = {
+      id:          true,
+      title:       true,
+      description: true,
+      area:        true,
+      category:    true,
+      status:      true,
+      vacancies:   true,
+      tags:        true,
+      startDate:   true,
+      applicationDeadline: true,
+      createdAt:   true,
+      owner: {
+        select: {
+          id:         true,
+          name:       true,
+          avatar:     true,
+          department: true,
+          institution: true,
+        },
+      },
+      _count: {
+        select: {
+          members:       true,
+          subscriptions: true,
+        },
+      },
+    } as const;
+
+    const [projects, total] = await Promise.all([
+      prisma.project.findMany({
+        select,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      prisma.project.count(),
+    ]);
+
+    return {
+      data:       projects.map((p) => {
+        const { _count, ...rest } = p as any;
+        return {
+          ...rest,
+          enrolled: _count?.members ?? 0,
+          subscribersCount: _count?.subscriptions ?? 0,
+        };
+      }),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   async getById(id: string) {
     const p = await prisma.project.findUnique({
       where: { id },
-      include: {
-        ...INCLUDE,
-        posts: {
-          orderBy: { createdAt: "desc" },
-          take: 5,
-          include: {
-            author: { select: { id: true, name: true, avatar: true } },
-            media: true,
-          },
-        },
-      },
+      include: detailWithPosts(),
     });
     if (!p) throw new HttpError(404, "Projeto não encontrado");
     return toResponse(p);
@@ -129,7 +194,7 @@ export class ProjectService {
         ...catData,
         ...dateData,
       },
-      include: INCLUDE,
+      include: detailInclude(),
     });
     return toResponse(updated);
   }

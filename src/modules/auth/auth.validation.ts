@@ -45,3 +45,16 @@ export const resetPasswordSchema = z.object({
     password: passwordSchema,
   }),
 });
+
+export const updateMeSchema = z.object({
+  body: z.object({
+    name:        z.string().min(2).optional(),
+    department:  z.string().min(2).optional(),
+    institution: z.string().min(2).optional(),
+    avatar:      z.string().url("URL de avatar inválida").optional().or(z.literal("")),
+    bio:         z.string().max(500).optional(),
+    linkedin:    z.string().optional(),
+    github:      z.string().optional(),
+    phone:       z.string().optional(),
+  }),
+});

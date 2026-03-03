@@ -12,6 +12,7 @@ DROP TABLE IF EXISTS "User" CASCADE;
 -- Remover enums antigos
 DROP TYPE IF EXISTS "ApplicationStatus";
 DROP TYPE IF EXISTS "ProjectStatus";
+DROP TYPE IF EXISTS "Role";
 
 -- Criar enums novos
 CREATE TYPE "Role"               AS ENUM ('ALUNO', 'PROFESSOR');

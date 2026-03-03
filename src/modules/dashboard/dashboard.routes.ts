@@ -5,6 +5,8 @@ import { DashboardController } from "./dashboard.controller";
 const ctrl = new DashboardController();
 export const dashboardRoutes = Router();
 
+dashboardRoutes.get("/overview",             authMiddleware, (req, res, next) => ctrl.overview(req, res, next));
+
 dashboardRoutes.get("/stats",                authMiddleware, (req, res, next) => ctrl.stats(req, res, next));
 dashboardRoutes.get("/projects",             authMiddleware, (req, res, next) => ctrl.myProjects(req, res, next));
 dashboardRoutes.get("/requests/mine",        authMiddleware, (req, res, next) => ctrl.myRequests(req, res, next));

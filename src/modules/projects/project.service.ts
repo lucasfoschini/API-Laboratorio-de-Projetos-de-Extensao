@@ -166,7 +166,7 @@ export class ProjectService {
       include: detailWithPosts(),
     });
     if (!p) throw new HttpError(404, "Projeto não encontrado");
-    return toResponse(p);
+    return toResponse(p); // full include remains unchanged
   }
 
   async update(id: string, input: UpdateInput, userId: string) {

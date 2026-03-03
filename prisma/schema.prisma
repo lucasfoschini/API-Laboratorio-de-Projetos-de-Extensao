@@ -1,0 +1,218 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  ALUNO
+  PROFESSOR
+}
+
+enum ProjectCategory {
+  MACRO_CAD
+  METROLOGIA
+  OUTRO
+}
+
+enum ProjectStatus {
+  ABERTO        // aceitando membros e inscrições
+  EM_ANDAMENTO  // em execução
+  FINALIZADO
+}
+
+enum ProjectArea {
+  TECHNOLOGY
+  HEALTH
+  EDUCATION
+  ENVIRONMENT
+  LAW
+  ARTS
+  ENGINEERING
+  SOCIAL
+}
+
+enum MemberRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PublicationType {
+  ARTICLE
+  REPORT
+  PRESENTATION
+  THESIS
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  ARTICLE_LINK
+  DOCUMENT
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id          String   @id @default(uuid())
+  name        String
+  email       String   @unique
+  password    String
+  role        Role
+  department  String?
+  institution String?
+  avatar            String?
+  bio               String?
+  phone             String?
+  linkedin          String?
+  github            String?
+  website           String?
+  resetToken        String?  @unique
+  resetTokenExpiry  DateTime?
+  createdAt         DateTime @default(now())
+
+  ownedProjects    Project[]       @relation("ProjectOwner")
+  memberProjects   Project[]       @relation("ProjectMembers")
+  memberRequests   MemberRequest[]
+  subscriptions    Subscription[]
+  posts            Post[]
+  publications     Publication[]   @relation("PublicationAuthors")
+  createdPubs      Publication[]   @relation("PublicationCreator")
+  notifications    Notification[]
+}
+
+model Project {
+  id                  String        @id @default(uuid())
+  title               String
+  description         String
+  area                ProjectArea   @default(TECHNOLOGY)
+  areas               String[]      @default([])
+  category            ProjectCategory
+  categoryText        String?       // categoria livre (texto)
+  status              ProjectStatus @default(ABERTO)
+  vacancies           Int           @default(5)
+  tags                String[]      @default([])
+  startDate           DateTime?
+  endDate             DateTime?
+  applicationDeadline DateTime?
+  coverImage          String?       // URL da imagem de capa
+  tempo               String
+  custo               Float         @default(0)
+  escopo              String
+  contactEmail        String?       // e-mail de contato público do projeto
+  contactInfo         String?       // informações adicionais de contato
+  createdAt           DateTime      @default(now())
+
+  ownerId String
+  owner   User   @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+
+  members        User[]          @relation("ProjectMembers")
+  memberRequests MemberRequest[]
+  subscriptions  Subscription[]
+  publications   Publication[]
+  posts          Post[]
+  notifications  Notification[]
+}
+
+// ─── Solicitação de entrada no grupo ─────────────────────────────────────────
+model MemberRequest {
+  id        String              @id @default(uuid())
+  message   String
+  status    MemberRequestStatus @default(PENDING)
+  createdAt DateTime            @default(now())
+
+  projectId String
+  userId    String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+// ─── Inscrição para acompanhar atualizações ───────────────────────────────────
+model Subscription {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  projectId String
+  userId    String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+// ─── Postagens / Atualizações do projeto ─────────────────────────────────────
+model Post {
+  id        String   @id @default(uuid())
+  title     String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projectId String
+  authorId  String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author    User    @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  media Media[]
+}
+
+// ─── Mídia anexada a posts ────────────────────────────────────────────────────
+model Media {
+  id        String    @id @default(uuid())
+  type      MediaType
+  url       String
+  title     String?
+  caption   String?
+  createdAt DateTime  @default(now())
+
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+}
+
+// ─── Publicações acadêmicas ───────────────────────────────────────────────────
+model Publication {
+  id         String          @id @default(uuid())
+  title      String
+  abstract   String
+  content    String?         // texto longo opcional
+  type       PublicationType @default(ARTICLE)
+  year       Int
+  journal    String?
+  doi        String?
+  zenodoLink String?
+  tags       String[]        @default([])
+  images     String[]        @default([])  // URLs de imagens
+  references String[]        @default([])  // referências bibliográficas
+  createdAt  DateTime        @default(now())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  userId String?
+  user   User?   @relation("PublicationCreator", fields: [userId], references: [id], onDelete: SetNull)
+
+  authors   User[]  @relation("PublicationAuthors")
+}
+
+// ─── Notificações ────────────────────────────────────────────────────────────
+model Notification {
+  id        String   @id @default(uuid())
+  type      String   // ex: MEMBER_LEFT, MEMBER_REMOVED, REQUEST_ACCEPTED
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+}

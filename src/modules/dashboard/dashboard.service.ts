@@ -1,6 +1,18 @@
 import { prisma } from "../../config/prisma";
 
 export class DashboardService {
+  // Retorna tudo de uma vez — evita múltiplas chamadas simultâneas do frontend
+  async overview(userId: string) {
+    const [stats, projects, requests, pendingRequests, subscriptions] = await Promise.all([
+      this.stats(userId),
+      this.myProjects(userId),
+      this.myRequests(userId),
+      this.pendingRequests(userId),
+      this.mySubscriptions(userId),
+    ]);
+    return { stats, projects, requests, pendingRequests, subscriptions };
+  }
+
   async stats(userId: string) {
     const [ownedCount, memberCount, subsCount, pendingRequests, postsCount] = await Promise.all([
       prisma.project.count({ where: { ownerId: userId } }),

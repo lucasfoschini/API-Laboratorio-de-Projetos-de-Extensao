@@ -4,6 +4,13 @@ import { DashboardService } from "./dashboard.service";
 const svc = new DashboardService();
 
 export class DashboardController {
+  async overview(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) { res.status(401).json({ message: "Unauthorized" }); return; }
+      res.json(await svc.overview(req.user.id));
+    } catch (e) { next(e); }
+  }
+
   async stats(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       if (!req.user) { res.status(401).json({ message: "Unauthorized" }); return; }

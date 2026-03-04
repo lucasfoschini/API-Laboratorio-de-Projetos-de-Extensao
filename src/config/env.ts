@@ -19,7 +19,7 @@ const envSchema = z.object({
   SMTP_USER:             z.string().optional(),
   SMTP_PASS:             z.string().optional(),
   SMTP_FROM_NAME:        z.string().default("Laboratório Ativo"),
-  FRONTEND_URL:          z.string().default("http://localhost:3000"),
+  FRONTEND_URL:          z.string().default("https://lexatec.vercel.app"),
 });
 
 const parsed = envSchema.safeParse(process.env);

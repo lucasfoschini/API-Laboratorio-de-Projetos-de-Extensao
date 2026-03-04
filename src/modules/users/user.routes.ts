@@ -19,10 +19,12 @@ const optStr = (max: number) =>
     z.string().max(max).nullable()
   ).optional();
 
-// helper to validate optional url string with configurable max length
-const optUrl = (max: number) =>
+// helper to validate optional url string with configurable max length; omit max to allow any length
+const optUrl = (max?: number) =>
   z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? null : v),
-    z.string().url("URL inválida").max(max).nullable()
+    max
+      ? z.string().url("URL inválida").max(max).nullable()
+      : z.string().url("URL inválida").nullable()
   ).optional();
 
 const updateProfileSchema = z.object({
@@ -35,7 +37,7 @@ const updateProfileSchema = z.object({
     linkedin:    optUrl(255),
     github:      optUrl(255),
     website:     optUrl(255),
-    avatar:      optUrl(2000),
+    avatar:      optUrl(),
   }),
 });
 

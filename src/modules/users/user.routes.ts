@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { authMiddleware } from "../../middlewares/auth.middleware";
+import { authMiddleware, optionalAuthMiddleware } from "../../middlewares/auth.middleware";
 import { validate } from "../../middlewares/validate.middleware";
 import { prisma } from "../../config/prisma";
 
@@ -103,7 +103,7 @@ userRoutes.get("/search", authMiddleware, async (req, res, next) => {
 });
 
 // GET /users/:id — perfil público de um usuário
-userRoutes.get("/:id", authMiddleware, async (req, res, next) => {
+userRoutes.get("/:id", optionalAuthMiddleware, async (req, res, next) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: String(req.params.id) },

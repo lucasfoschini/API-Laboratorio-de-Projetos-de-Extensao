@@ -4,7 +4,7 @@ services:
   - name: minha-api
     # URL interna do seu serviço no Railway
     # Troque pelo nome real do seu serviço
-    url: api-laboratorio-de-projetos-de-e.railway.internal
+    url: http://api-laboratorio-de-projetos-de-e.railway.internal
 
     routes:
       - name: rota-principal

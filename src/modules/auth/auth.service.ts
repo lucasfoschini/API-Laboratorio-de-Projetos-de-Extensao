@@ -2,10 +2,9 @@ import bcrypt from "bcrypt";
 import crypto from "crypto";
 import { Role } from "@prisma/client";
 import { prisma } from "../../config/prisma";
-import { env } from "../../config/env";
 import { HttpError } from "../../utils/http-error";
-import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../../utils/jwt";
-import { sendMail, buildResetPasswordEmail } from "../../utils/mail";
+import { signAccessToken, signRefreshToken, verifyToken } from "../../utils/jwt";
+import { sendPasswordResetEmail } from "../../utils/email";
 
 interface RegisterInput {
   name:        string;
@@ -30,6 +29,10 @@ const USER_SELECT = {
   institution: true,
   avatar:      true,
   createdAt:   true,
+  bio:         true,
+  linkedin:    true,
+  github:      true,
+  phone:       true,
 } as const;
 
 export class AuthService {
@@ -53,11 +56,12 @@ export class AuthService {
     });
     return user;
   }
+
   async register(input: RegisterInput) {
     const existing = await prisma.user.findUnique({ where: { email: input.email } });
     if (existing) throw new HttpError(409, "E-mail já cadastrado");
 
-    const hashedPassword = await bcrypt.hash(input.password, env.BCRYPT_SALT_ROUNDS);
+    const hashedPassword = await bcrypt.hash(input.password, 10);
 
     const user = await prisma.user.create({
       data: {
@@ -103,7 +107,7 @@ export class AuthService {
 
   async refresh(refreshToken: string) {
     try {
-      const payload = verifyRefreshToken(refreshToken);
+      const payload = verifyToken(refreshToken);
       const user = await prisma.user.findUnique({
         where:  { id: payload.sub },
         select: USER_SELECT,
@@ -132,45 +136,42 @@ export class AuthService {
   }
 
   async forgotPassword(email: string) {
-    // Sempre retorna 200 para evitar enumeração de e-mails
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) return { message: "Se o e-mail estiver cadastrado, você receberá um link de recuperação." };
+    if (!user) return { message: "Se o e-mail existir, você receberá as instruções." };
 
-    const token = crypto.randomUUID();
-    const expiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
-
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { resetToken: token, resetTokenExpiry: expiry },
+    await prisma.passwordResetToken.updateMany({
+      where: { userId: user.id, used: false },
+      data:  { used: true },
     });
 
-    const resetLink = `${env.FRONTEND_URL}/auth/redefinir-senha?token=${token}`;
+    const token     = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 60);
 
-    await sendMail({
-      to: user.email,
-      subject: "Recuperação de Senha — Laboratório Ativo",
-      html: buildResetPasswordEmail(user.name, resetLink),
+    await prisma.passwordResetToken.create({
+      data: { token, expiresAt, userId: user.id },
     });
 
-    return { message: "Se o e-mail estiver cadastrado, você receberá um link de recuperação." };
+    await sendPasswordResetEmail(user.email, user.name, token);
+
+    return { message: "Se o e-mail existir, você receberá as instruções." };
   }
 
   async resetPassword(token: string, newPassword: string) {
-    const user = await prisma.user.findUnique({ where: { resetToken: token } });
+    const record = await prisma.passwordResetToken.findUnique({ where: { token } });
 
-    if (!user || !user.resetTokenExpiry || user.resetTokenExpiry < new Date()) {
+    if (!record || record.used || record.expiresAt < new Date())
       throw new HttpError(400, "Token inválido ou expirado.");
-    }
 
-    const hashedPassword = await bcrypt.hash(newPassword, env.BCRYPT_SALT_ROUNDS);
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
 
     await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        password: hashedPassword,
-        resetToken: null,
-        resetTokenExpiry: null,
-      },
+      where: { id: record.userId },
+      data:  { password: hashedPassword },
+    });
+
+    await prisma.passwordResetToken.update({
+      where: { id: record.id },
+      data:  { used: true },
     });
 
     return { message: "Senha redefinida com sucesso." };

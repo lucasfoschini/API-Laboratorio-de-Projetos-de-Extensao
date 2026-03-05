@@ -110,6 +110,7 @@ export class ProjectService {
       title:       true,
       description: true,
       area:        true,
+      areas:       true,
       category:    true,
       status:      true,
       vacancies:   true,

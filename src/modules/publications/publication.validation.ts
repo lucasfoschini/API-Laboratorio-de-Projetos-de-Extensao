@@ -5,7 +5,7 @@ export const createPublicationSchema = z.object({
   body: z.object({
     title:      z.string().min(3, "Título muito curto"),
     abstract:   z.string().min(10, "Resumo muito curto"),
-    content:    z.string().max(5000, "Conteúdo muito longo").optional(),
+    content:    z.string().optional(),
     type:       z.nativeEnum(PublicationType),
     year:       z.coerce.number().int().min(1900).max(2100),
     journal:    z.string().optional(),
@@ -28,7 +28,7 @@ export const updatePublicationSchema = z.object({
   body: z.object({
     title:      z.string().min(3, "Título muito curto").optional(),
     abstract:   z.string().min(10, "Resumo muito curto").optional(),
-    content:    z.string().max(5000, "Conteúdo muito longo").nullable().optional(),
+    content:    z.string().nullable().optional(),
     type:       z.nativeEnum(PublicationType).optional(),
     year:       z.coerce.number().int().min(1900).max(2100).optional(),
     journal:    z.string().nullable().optional(),

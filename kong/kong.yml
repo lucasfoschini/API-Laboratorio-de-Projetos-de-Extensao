@@ -1,0 +1,23 @@
+_format_version: "3.0"
+
+services:
+  - name: minha-api
+    # URL interna do seu serviço no Railway
+    # Troque pelo nome real do seu serviço
+    url: api-laboratorio-de-projetos-de-e.railway.internal
+
+    routes:
+      - name: rota-principal
+        paths:
+          - /
+        strip_path: false
+
+    plugins:
+      # Rate limiting: máx 60 requisições por minuto por IP
+      - name: rate-limiting
+        config:
+          minute: 60
+          policy: local
+
+      # Prometheus: expõe métricas em /metrics
+      - name: prometheus

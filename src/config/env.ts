@@ -13,15 +13,9 @@ const envSchema = z.object({
   RATE_LIMIT_WINDOW_MS:  z.coerce.number().default(15 * 60 * 1000), // 15 min
   RATE_LIMIT_MAX:        z.coerce.number().default(100),
   AUTH_RATE_LIMIT_MAX:   z.coerce.number().default(10), // login/register
-  // SMTP (e-mail)
-  SMTP_HOST:             z.string().default("smtp.gmail.com"),
-  SMTP_PORT:             z.coerce.number().default(587),
-  SMTP_USER:             z.string().optional(),
-  SMTP_PASS:             z.string().optional(),
-  SMTP_FROM_NAME:        z.string().default("Laboratório Ativo"),
-  FRONTEND_URL:          z.string().default("https://lexatec.vercel.app"),
+  RESEND_API_KEY: z.string().min(1),
+  FRONTEND_URL:   z.string().url().default("http://localhost:3000"),
 });
-
 const parsed = envSchema.safeParse(process.env);
 if (!parsed.success) {
   throw new Error(`Invalid environment variables: ${parsed.error.message}`);

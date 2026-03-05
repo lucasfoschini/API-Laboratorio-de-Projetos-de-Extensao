@@ -19,7 +19,6 @@ const optStr = (max: number) =>
     z.string().max(max).nullable()
   ).optional();
 
-// helper to validate optional url string with configurable max length; omit max to allow any length
 const optUrl = (max?: number) =>
   z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? null : v),
     max
@@ -92,7 +91,7 @@ userRoutes.get("/search", authMiddleware, async (req, res, next) => {
           { name:  { contains: q, mode: "insensitive" } },
           { email: { contains: q, mode: "insensitive" } },
         ],
-        NOT: { id: req.user!.id }, // exclui o próprio usuário
+        NOT: { id: req.user!.id },
       },
       select: { id: true, name: true, email: true, avatar: true, department: true, role: true },
       take: 8,
@@ -100,5 +99,55 @@ userRoutes.get("/search", authMiddleware, async (req, res, next) => {
     });
 
     res.json(users);
+  } catch (e) { next(e); }
+});
+
+// GET /users/:id — perfil público de um usuário
+userRoutes.get("/:id", authMiddleware, async (req, res, next) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: String(req.params.id) },
+      select: {
+        ...USER_SELECT,
+        _count: {
+          select: { ownedProjects: true, memberProjects: true, publications: true },
+        },
+        // ✅ Projetos criados pelo usuário
+        ownedProjects: {
+          select: {
+            id: true, title: true, description: true, status: true,
+            area: true, areas: true, vacancies: true, tags: true,
+            coverImage: true, createdAt: true,
+            owner: { select: { id: true, name: true, avatar: true } },
+            _count: { select: { members: true, posts: true } },
+          },
+          orderBy: { createdAt: "desc" },
+        },
+        // ✅ Projetos que o usuário participa como membro
+        memberProjects: {
+          select: {
+            id: true, title: true, description: true, status: true,
+            area: true, areas: true, vacancies: true, tags: true,
+            coverImage: true, createdAt: true,
+            owner: { select: { id: true, name: true, avatar: true } },
+            _count: { select: { members: true, posts: true } },
+          },
+          orderBy: { createdAt: "desc" },
+        },
+        // ✅ Publicações do usuário
+        publications: {
+          select: {
+            id: true, title: true, abstract: true, type: true,
+            year: true, journal: true, doi: true, tags: true, createdAt: true,
+            authors: { select: { id: true, name: true, avatar: true } },
+            project: { select: { id: true, title: true } },
+          },
+          orderBy: { year: "desc" },
+        },
+      },
+    });
+
+    if (!user) { res.status(404).json({ message: "Usuário não encontrado" }); return; }
+    res.json(user);
   } catch (e) { next(e); }
 });

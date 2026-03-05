@@ -20,14 +20,6 @@ export class AuthController {
     } catch (error) { next(error); }
   }
 
-  async updateMe(req: Request, res: Response, next: NextFunction): Promise<void> {
-    try {
-      if (!req.user) { res.status(401).json({ message: "Unauthorized" }); return; }
-      const user = await authService.updateMe(req.user.id, req.body);
-      res.status(200).json(user);
-    } catch (error) { next(error); }
-  }
-
   async refresh(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { refreshToken } = req.body;
@@ -36,10 +28,10 @@ export class AuthController {
     } catch (error) { next(error); }
   }
 
-  async me(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async updateMe(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       if (!req.user) { res.status(401).json({ message: "Unauthorized" }); return; }
-      const user = await authService.me(req.user.id);
+      const user = await authService.updateMe(req.user.id, req.body);
       res.status(200).json(user);
     } catch (error) { next(error); }
   }
@@ -57,6 +49,14 @@ export class AuthController {
       const { token, password } = req.body;
       const result = await authService.resetPassword(token, password);
       res.status(200).json(result);
+    } catch (error) { next(error); }
+  }
+
+  async me(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) { res.status(401).json({ message: "Unauthorized" }); return; }
+      const user = await authService.me(req.user.id);
+      res.status(200).json(user);
     } catch (error) { next(error); }
   }
 }

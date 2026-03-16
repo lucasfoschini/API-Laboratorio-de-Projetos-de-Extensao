@@ -7,6 +7,7 @@ import { memberRequestRoutes } from "../modules/member-requests/member-request.r
 import { postRoutes }          from "../modules/posts/post.routes";
 import { userRoutes }          from "../modules/users/user.routes";
 import { notificationRoutes }  from "../modules/notifications/notification.routes";
+import { activityRoutes }      from "../modules/projects/activity.routes";
 
 export const routes = Router();
 
@@ -14,6 +15,7 @@ routes.get("/health", (_req, res) => res.json({ status: "ok", app: "Laboratório
 
 routes.use("/auth",            authRoutes);
 routes.use("/projects",        projectRoutes);
+routes.use("/projects/:projectId/activities", activityRoutes);
 routes.use("/publications",    publicationRoutes);
 routes.use("/dashboard",       dashboardRoutes);
 routes.use("/member-requests", memberRequestRoutes);

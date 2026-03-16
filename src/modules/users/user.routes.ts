@@ -122,6 +122,7 @@ userRoutes.get("/:id", optionalAuthMiddleware, async (req, res, next) => {
             _count: { select: { members: true, posts: true } },
           },
           orderBy: { createdAt: "desc" },
+          take: 20,
         },
         // ✅ Projetos que o usuário participa como membro
         memberProjects: {
@@ -133,6 +134,7 @@ userRoutes.get("/:id", optionalAuthMiddleware, async (req, res, next) => {
             _count: { select: { members: true, posts: true } },
           },
           orderBy: { createdAt: "desc" },
+          take: 20,
         },
         // ✅ Publicações do usuário
         publications: {
@@ -143,6 +145,7 @@ userRoutes.get("/:id", optionalAuthMiddleware, async (req, res, next) => {
             project: { select: { id: true, title: true } },
           },
           orderBy: { year: "desc" },
+          take: 20,
         },
       },
     });

@@ -27,14 +27,17 @@ enum ProjectStatus {
 }
 
 enum ProjectArea {
-  TECHNOLOGY
-  HEALTH
-  EDUCATION
-  ENVIRONMENT
-  LAW
-  ARTS
-  ENGINEERING
-  SOCIAL
+  CONTROLE_SISTEMAS
+  SISTEMAS_MECATRONICOS
+  ACIONAMENTOS_ELETRICOS
+  SISTEMAS_INTELIGENTES
+  ROBOTICA_INDUSTRIAL
+  AUTOMACAO_MECANICA
+  AUTOMACAO_ELETRICA
+  ENGENHARIA_PROJETO
+  MANUFATURA_DIGITAL
+  PROJETO_COMPUTADOR
+  SIMULACAO_COMPUTACIONAL
 }
 
 enum MemberRequestStatus {
@@ -81,6 +84,7 @@ model User {
   memberProjects   Project[]       @relation("ProjectMembers")
   memberRequests   MemberRequest[]
   subscriptions    Subscription[]
+  activities       Activity[]      @relation("ActivityResponsibles")
   posts            Post[]
   publications     Publication[]   @relation("PublicationAuthors")
   createdPubs      Publication[]   @relation("PublicationCreator")
@@ -92,7 +96,7 @@ model Project {
   id                  String        @id @default(uuid())
   title               String
   description         String
-  area                ProjectArea   @default(TECHNOLOGY)
+  area                ProjectArea   @default(CONTROLE_SISTEMAS)
   areas               String[]      @default([])
   category            ProjectCategory
   categoryText        String?       // categoria livre (texto)
@@ -116,6 +120,7 @@ model Project {
   members        User[]          @relation("ProjectMembers")
   memberRequests MemberRequest[]
   subscriptions  Subscription[]
+  activities     Activity[]
   publications   Publication[]
   posts          Post[]
   notifications  Notification[]
@@ -134,6 +139,8 @@ model MemberRequest {
   user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, userId])
+  @@index([projectId, status])
+  @@index([userId])
 }
 
 // ─── Inscrição para acompanhar atualizações ───────────────────────────────────
@@ -147,6 +154,8 @@ model Subscription {
   user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, userId])
+  @@index([userId])
+  @@index([projectId])
 }
 
 // ─── Postagens / Atualizações do projeto ─────────────────────────────────────
@@ -163,6 +172,9 @@ model Post {
   author    User    @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
   media Media[]
+
+  @@index([projectId])
+  @@index([authorId])
 }
 
 // ─── Mídia anexada a posts ────────────────────────────────────────────────────
@@ -192,6 +204,8 @@ model Publication {
   tags       String[]        @default([])
   images     String[]        @default([])  // URLs de imagens
   references String[]        @default([])  // referências bibliográficas
+  approved          Boolean         @default(false)
+  revisionRequested Boolean         @default(false)
   createdAt  DateTime        @default(now())
 
   projectId String
@@ -201,6 +215,29 @@ model Publication {
   user   User?   @relation("PublicationCreator", fields: [userId], references: [id], onDelete: SetNull)
 
   authors   User[]  @relation("PublicationAuthors")
+
+  @@index([projectId])
+  @@index([approved])
+  @@index([approved, projectId])
+  @@index([userId])
+}
+
+
+// ─── Atividades ──────────────────────────────────────────────────────────────
+model Activity {
+  id          String   @id @default(uuid())
+  title       String
+  description String
+  dueDate     DateTime
+  done        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  projectId    String
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  responsibles User[]   @relation("ActivityResponsibles")
+
+  @@index([projectId])
 }
 
 // ─── Notificações ────────────────────────────────────────────────────────────
@@ -216,7 +253,11 @@ model Notification {
 
   projectId String?
   project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([userId, read])
+  @@index([userId])
 }
+
 model PasswordResetToken {
   id        String   @id @default(uuid())
   token     String   @unique

@@ -18,7 +18,10 @@ export class ProjectController {
     } catch (e) { next(e); }
   }
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
-    try { res.json(await svc.getById(req.params.id as string)); } catch (e) { next(e); }
+    try {
+      // userId pode ser undefined se não autenticado (optionalAuthMiddleware)
+      res.json(await svc.getById(req.params.id as string, req.user?.id));
+    } catch (e) { next(e); }
   }
   async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {

@@ -1,6 +1,10 @@
 import { MediaType } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { HttpError } from "../../utils/http-error";
+import { Resend } from "resend";
+import { env } from "../../config/env";
+
+const resend = new Resend(env.RESEND_API_KEY);
 
 interface MediaInput { type: MediaType; url: string; title?: string; caption?: string; }
 
@@ -13,26 +17,50 @@ interface CreatePostInput {
 interface UpdatePostInput {
   title?:   string;
   content?: string;
-  media?:   MediaInput[]; // if provided, replaces existing media list completely
+  media?:   MediaInput[];
 }
 
 const POST_INCLUDE = {
-  author: { select: { id: true, name: true, avatar: true, department: true } },
-  media:  true,
+  author:  { select: { id: true, name: true, avatar: true, department: true } },
+  media:   true,
   project: { select: { id: true, title: true, ownerId: true } },
 } as const;
 
+async function sendTopicEmail(to: string, name: string, projectTitle: string, topicTitle: string) {
+  try {
+    await resend.emails.send({
+      from:    "LEXA <no-reply@resend.dev>",
+      to,
+      subject: `Novo tópico em "${projectTitle}"`,
+      html: `
+        <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
+          <h2 style="color: #1e1e2e; margin-bottom: 8px;">LEXA — Laboratório de Extensão Ativo</h2>
+          <p style="color: #555; margin-bottom: 16px;">Olá, ${name}.</p>
+          <p style="color: #333; margin-bottom: 24px;">
+            Um novo tópico foi criado no projeto <strong>"${projectTitle}"</strong>:<br/>
+            <strong>${topicTitle}</strong>
+          </p>
+          <p style="color: #999; font-size: 13px; margin-top: 24px;">Este é um e-mail automático, não responda.</p>
+        </div>
+      `,
+    });
+  } catch {
+    // Não bloqueia a operação se e-mail falhar
+  }
+}
+
 export class PostService {
   async create(projectId: string, authorId: string, input: CreatePostInput) {
-    // Verifica se o autor é membro do projeto
+    // Busca projeto com membros para enviar e-mails
     const project = await prisma.project.findFirst({
-      where: { id: projectId, members: { some: { id: authorId } } },
+      where:   { id: projectId, members: { some: { id: authorId } } },
+      include: { members: { select: { id: true, name: true, email: true } } },
     });
     if (!project) throw new HttpError(403, "Apenas membros do projeto podem publicar atualizações");
 
     const data: any = {
-      title: input.title,
-      content: input.content,
+      title:     input.title,
+      content:   input.content,
       projectId,
       authorId,
     };
@@ -40,14 +68,15 @@ export class PostService {
       data.media = { create: input.media };
     }
 
-    const post = await prisma.post.create({
-      data,
-      include: POST_INCLUDE,
-    });
+    const post = await prisma.post.create({ data, include: POST_INCLUDE });
 
-    // Notificar inscritos (futuramente: e-mail/push — aqui só registra)
-    const subs = await prisma.subscription.findMany({ where: { projectId }, select: { userId: true } });
-    console.log(`📢 Notificando ${subs.length} inscritos sobre novo post: "${post.title}"`);
+    // Envia e-mail para todos os membros exceto o autor
+    const recipients = project.members.filter((m) => m.id !== authorId && m.email);
+    await Promise.all(
+      recipients.map((m) =>
+        sendTopicEmail(m.email, m.name, project.title, post.title)
+      )
+    );
 
     return post;
   }
@@ -58,11 +87,11 @@ export class PostService {
 
     const [posts, total] = await Promise.all([
       prisma.post.findMany({
-        where: { projectId },
+        where:   { projectId },
         include: POST_INCLUDE,
         orderBy: { createdAt: "desc" },
-        skip: (page - 1) * limit,
-        take: limit,
+        skip:    (page - 1) * limit,
+        take:    limit,
       }),
       prisma.post.count({ where: { projectId } }),
     ]);
@@ -78,7 +107,7 @@ export class PostService {
 
   async update(postId: string, userId: string, input: UpdatePostInput) {
     const post = await prisma.post.findUnique({
-      where: { id: postId },
+      where:   { id: postId },
       include: { project: { select: { ownerId: true } } },
     });
     if (!post) throw new HttpError(404, "Post não encontrado");
@@ -86,22 +115,13 @@ export class PostService {
     if (!canEdit) throw new HttpError(403, "Acesso negado");
 
     const data: any = {};
-    if (input.title !== undefined) data.title = input.title;
+    if (input.title   !== undefined) data.title   = input.title;
     if (input.content !== undefined) data.content = input.content;
-    if (input.media !== undefined) {
-      // replace whole media list
-      data.media = {
-        deleteMany: {},
-        create: input.media,
-      };
+    if (input.media   !== undefined) {
+      data.media = { deleteMany: {}, create: input.media };
     }
 
-    const updated = await prisma.post.update({
-      where: { id: postId },
-      data,
-      include: POST_INCLUDE,
-    });
-    return updated;
+    return prisma.post.update({ where: { id: postId }, data, include: POST_INCLUDE });
   }
 
   async delete(postId: string, userId: string) {

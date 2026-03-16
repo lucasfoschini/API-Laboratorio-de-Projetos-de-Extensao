@@ -1,7 +1,6 @@
 import { prisma } from "../../config/prisma";
 
 export class DashboardService {
-  // Retorna tudo de uma vez — evita múltiplas chamadas simultâneas do frontend
   async overview(userId: string) {
     const [stats, projects, requests, pendingRequests, subscriptions] = await Promise.all([
       this.stats(userId),
@@ -11,6 +10,62 @@ export class DashboardService {
       this.mySubscriptions(userId),
     ]);
     return { stats, projects, requests, pendingRequests, subscriptions };
+  }
+
+  async notificationSummary(userId: string) {
+    const [pendingRequests, subscriptions, systemNotifications] = await Promise.all([
+      prisma.memberRequest.findMany({
+        where: { project: { ownerId: userId }, status: "PENDING" },
+        include: {
+          user:    { select: { id: true, name: true, avatar: true } },
+          project: { select: { id: true, title: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      }),
+      prisma.subscription.findMany({
+        where: { userId },
+        select: { projectId: true, createdAt: true },
+      }),
+      prisma.notification.findMany({
+        where: { userId, read: false },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      }),
+    ]);
+
+    let posts: any[]        = [];
+    let publications: any[] = [];
+
+    if (subscriptions.length > 0) {
+      const projectFilters = subscriptions.map((s) => ({
+        projectId: s.projectId,
+        createdAt: { gte: s.createdAt },
+      }));
+
+      [posts, publications] = await Promise.all([
+        prisma.post.findMany({
+          where: { OR: projectFilters },
+          include: { project: { select: { id: true, title: true } } },
+          orderBy: { createdAt: "desc" },
+          take: 20,
+        }),
+        // ✅ Só publicações aprovadas no sino
+        prisma.publication.findMany({
+          where: { OR: projectFilters.map(f => ({ ...f, approved: true })) },
+          include: { project: { select: { id: true, title: true } } },
+          orderBy: { createdAt: "desc" },
+          take: 10,
+        }),
+      ]);
+    }
+
+    return {
+      pendingRequests,
+      subscriptions,
+      activity: { posts, publications },
+      systemNotifications,
+    };
   }
 
   async stats(userId: string) {
@@ -33,6 +88,7 @@ export class DashboardService {
         _count:  { select: { members: true, subscriptions: true, posts: true } },
       },
       orderBy: { createdAt: "desc" },
+      take: 30,
     });
     return projects.map(({ _count, ...p }) => ({
       ...p, enrolled: _count.members, subscribersCount: _count.subscriptions, postsCount: _count.posts,
@@ -74,8 +130,6 @@ export class DashboardService {
     });
   }
 
-  // Atividade recente dos projetos que o usuário acompanha (para notificações)
-  // Retorna apenas posts/publicações criados APÓS a inscrição do usuário em cada projeto
   async subscribedActivity(userId: string) {
     const subs = await prisma.subscription.findMany({
       where: { userId },
@@ -83,7 +137,6 @@ export class DashboardService {
     });
     if (subs.length === 0) return { posts: [], publications: [] };
 
-    // Filtro por projeto: somente conteúdo criado após a data de inscrição
     const projectFilters = subs.map((s) => ({
       projectId: s.projectId,
       createdAt: { gte: s.createdAt },
@@ -99,8 +152,9 @@ export class DashboardService {
         orderBy: { createdAt: "desc" },
         take: 20,
       }),
+      // ✅ Só publicações aprovadas
       prisma.publication.findMany({
-        where: { OR: projectFilters },
+        where: { OR: projectFilters.map(f => ({ ...f, approved: true })) },
         include: { project: { select: { id: true, title: true } } },
         orderBy: { createdAt: "desc" },
         take: 10,

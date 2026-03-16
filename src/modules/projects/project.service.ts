@@ -2,10 +2,34 @@ import { ProjectArea, ProjectCategory, ProjectStatus } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { HttpError } from "../../utils/http-error";
 import { NotificationService } from "../notifications/notification.service";
+import { Resend } from "resend";
+import { env } from "../../config/env";
+import { cached, invalidateByPrefix } from "../../config/cache";
+
+const resend = new Resend(env.RESEND_API_KEY);
 
 const VALID_CATEGORIES = Object.values(ProjectCategory) as string[];
 
-// includes as functions to avoid TS readonly spread issue
+async function sendProjectEmail(to: string, name: string, subject: string, body: string) {
+  try {
+    await resend.emails.send({
+      from: "LEXA <no-reply@resend.dev>",
+      to,
+      subject,
+      html: `
+        <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
+          <h2 style="color: #1e1e2e; margin-bottom: 8px;">LEXA — Laboratório de Extensão Ativo</h2>
+          <p style="color: #555; margin-bottom: 16px;">Olá, ${name}.</p>
+          <p style="color: #333; margin-bottom: 24px;">${body}</p>
+          <p style="color: #999; font-size: 13px; margin-top: 24px;">Este é um e-mail automático, não responda.</p>
+        </div>
+      `,
+    });
+  } catch {
+    // Não bloqueia a operação se e-mail falhar
+  }
+}
+
 function listInclude() {
   return {
     owner:  { select: { id: true, name: true, avatar: true, department: true, institution: true } },
@@ -40,9 +64,9 @@ function toResponse(p: any) {
   const { _count, ...rest } = p;
   return {
     ...rest,
-    enrolled:            _count?.members ?? 0,
-    subscribersCount:    _count?.subscriptions ?? 0,
-    postsCount:          _count?.posts ?? 0,
+    enrolled:             _count?.members ?? 0,
+    subscribersCount:     _count?.subscriptions ?? 0,
+    postsCount:           _count?.posts ?? 0,
     pendingRequestsCount: _count?.memberRequests ?? 0,
   };
 }
@@ -72,6 +96,18 @@ function resolveCategory(raw?: string): { category: ProjectCategory; categoryTex
   return { category: "OUTRO", categoryText: raw };
 }
 
+function resolveStatus(
+  vacancies: number,
+  memberCount: number,
+  currentStatus?: ProjectStatus,
+  explicitStatus?: ProjectStatus,
+): ProjectStatus {
+  if (explicitStatus) return explicitStatus;
+  if (currentStatus === "FINALIZADO") return "FINALIZADO";
+  const openSlots = vacancies - memberCount;
+  return openSlots > 0 ? "ABERTO" : "EM_ANDAMENTO";
+}
+
 export class ProjectService {
   async create(input: CreateInput, ownerId: string) {
     const membersToConnect = [
@@ -80,6 +116,8 @@ export class ProjectService {
     ];
 
     const { category, categoryText } = resolveCategory(input.category ?? input.categoryText);
+    const initialMemberCount = membersToConnect.length;
+    const initialStatus = resolveStatus(input.vacancies, initialMemberCount);
 
     const project = await prisma.project.create({
       data: {
@@ -87,10 +125,11 @@ export class ProjectService {
         area: input.area, category, vacancies: input.vacancies,
         areas: input.areas ?? [], categoryText,
         tags: input.tags ?? [], tempo: input.tempo,
+        status: initialStatus,
         custo: input.custo ?? 0, escopo: input.escopo,
-        coverImage:   input.coverImage   ?? null,
-        contactEmail: input.contactEmail ?? null,
-        contactInfo:  input.contactInfo  ?? null,
+        coverImage:          input.coverImage          ?? null,
+        contactEmail:        input.contactEmail        ?? null,
+        contactInfo:         input.contactInfo         ?? null,
         startDate:           input.startDate           ? new Date(input.startDate)           : null,
         endDate:             input.endDate             ? new Date(input.endDate)             : null,
         applicationDeadline: input.applicationDeadline ? new Date(input.applicationDeadline) : null,
@@ -99,80 +138,73 @@ export class ProjectService {
       },
       include: detailInclude(),
     });
+    invalidateByPrefix("projects:list");
     return toResponse(project);
   }
 
   async getAll(page = 1, limit = 12) {
-    const skip = (page - 1) * limit;
+    const cacheKey = `projects:list:${page}:${limit}`;
+    return cached(cacheKey, 60, async () => {
+      const skip = (page - 1) * limit;
 
-    const select = {
-      id:          true,
-      title:       true,
-      description: true,
-      area:        true,
-      areas:       true,
-      category:    true,
-      status:      true,
-      vacancies:   true,
-      tags:        true,
-      startDate:   true,
-      applicationDeadline: true,
-      createdAt:   true,
-      owner: {
-        select: {
-          id:         true,
-          name:       true,
-          avatar:     true,
-          department: true,
-          institution: true,
-        },
-      },
-      _count: {
-        select: {
-          members:       true,
-          subscriptions: true,
-        },
-      },
-    } as const;
+      const select = {
+        id: true, title: true, description: true, area: true, areas: true,
+        category: true, status: true, vacancies: true, tags: true,
+        startDate: true, applicationDeadline: true, createdAt: true,
+        owner: { select: { id: true, name: true, avatar: true, department: true, institution: true } },
+        _count: { select: { members: true, subscriptions: true } },
+      } as const;
 
-    const [projects, total] = await Promise.all([
-      prisma.project.findMany({
-        select,
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: limit,
-      }),
-      prisma.project.count(),
-    ]);
+      const [projects, total] = await Promise.all([
+        prisma.project.findMany({ select, orderBy: { createdAt: "desc" }, skip, take: limit }),
+        prisma.project.count(),
+      ]);
 
-    return {
-      data:       projects.map((p) => {
-        const { _count, ...rest } = p as any;
-        return {
-          ...rest,
-          enrolled: _count?.members ?? 0,
-          subscribersCount: _count?.subscriptions ?? 0,
-        };
-      }),
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    };
+      return {
+        data: projects.map((p) => {
+          const { _count, ...rest } = p as any;
+          return { ...rest, enrolled: _count?.members ?? 0, subscribersCount: _count?.subscriptions ?? 0 };
+        }),
+        total, page, limit,
+        totalPages: Math.ceil(total / limit),
+        hasMore:    page * limit < total,
+      };
+    });
   }
 
-  async getById(id: string) {
-    const p = await prisma.project.findUnique({
-      where: { id },
-      include: detailWithPosts(),
-    });
+  async getById(id: string, userId?: string) {
+    const p = await prisma.project.findUnique({ where: { id }, include: detailWithPosts() });
     if (!p) throw new HttpError(404, "Projeto não encontrado");
-    return toResponse(p); // full include remains unchanged
+
+    const base = toResponse(p);
+
+    // Subscription status
+    const subscribed = userId
+      ? !!(await prisma.subscription.findUnique({ where: { projectId_userId: { projectId: id, userId } } }))
+      : false;
+
+    // Activities — dono vê todas, membro vê só as suas
+    const isOwner = p.ownerId === userId;
+    const activitiesWhere = isOwner || !userId
+      ? { projectId: id }
+      : { projectId: id, responsibles: { some: { id: userId } } };
+    const activities = userId
+      ? await prisma.activity.findMany({
+          where:   activitiesWhere,
+          include: { responsibles: { select: { id: true, name: true, avatar: true, email: true } }, project: { select: { id: true, title: true, ownerId: true } } },
+          orderBy: { dueDate: "asc" },
+        })
+      : [];
+
+    return { ...base, subscribed, activities };
   }
 
   async update(id: string, input: UpdateInput, userId: string) {
-    const project = await prisma.project.findUnique({ where: { id } });
-    if (!project)              throw new HttpError(404, "Projeto não encontrado");
+    const project = await prisma.project.findUnique({
+      where: { id },
+      include: { _count: { select: { members: true } } },
+    });
+    if (!project)                   throw new HttpError(404, "Projeto não encontrado");
     if (project.ownerId !== userId) throw new HttpError(403, "Apenas o criador pode editar este projeto");
 
     const catData: Partial<{ category: ProjectCategory; categoryText: string | null }> =
@@ -180,31 +212,35 @@ export class ProjectService {
         ? resolveCategory(input.category ?? input.categoryText)
         : {};
 
-    // Strip raw string fields already handled by resolveCategory
-    const { category: _c, categoryText: _ct, startDate, endDate, applicationDeadline, ...rest } = input;
+    const { category: _c, categoryText: _ct, startDate, endDate, applicationDeadline, status: explicitStatus, ...rest } = input;
 
     const dateData: Record<string, Date> = {};
     if (startDate)           dateData.startDate           = new Date(startDate);
     if (endDate)             dateData.endDate             = new Date(endDate);
     if (applicationDeadline) dateData.applicationDeadline = new Date(applicationDeadline);
 
+    const newVacancies   = input.vacancies ?? project.vacancies;
+    const memberCount    = (project as any)._count.members;
+    const resolvedStatus = resolveStatus(
+      newVacancies, memberCount, project.status,
+      explicitStatus as ProjectStatus | undefined,
+    );
+
     const updated = await prisma.project.update({
       where: { id },
-      data: {
-        ...rest,
-        ...catData,
-        ...dateData,
-      },
+      data: { ...rest, ...catData, ...dateData, status: resolvedStatus },
       include: detailInclude(),
     });
+    invalidateByPrefix("projects:list");
     return toResponse(updated);
   }
 
   async delete(id: string, userId: string) {
     const project = await prisma.project.findUnique({ where: { id } });
-    if (!project)              throw new HttpError(404, "Projeto não encontrado");
+    if (!project)                   throw new HttpError(404, "Projeto não encontrado");
     if (project.ownerId !== userId) throw new HttpError(403, "Apenas o criador pode excluir este projeto");
     await prisma.project.delete({ where: { id } });
+    invalidateByPrefix("projects:list");
     return { message: "Projeto excluído com sucesso" };
   }
 
@@ -233,8 +269,12 @@ export class ProjectService {
 
   async leave(projectId: string, userId: string) {
     const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      include: { members: { select: { id: true, name: true } } },
+      where:   { id: projectId },
+      include: {
+        members: { select: { id: true, name: true, email: true } },
+        owner:   { select: { id: true, name: true, email: true } },
+        _count:  { select: { members: true } },
+      },
     });
     if (!project) throw new HttpError(404, "Projeto não encontrado");
     if (project.ownerId === userId) throw new HttpError(400, "O líder não pode sair do próprio projeto");
@@ -244,50 +284,75 @@ export class ProjectService {
 
     await prisma.project.update({
       where: { id: projectId },
-      data: { members: { disconnect: { id: userId } } },
+      data:  { members: { disconnect: { id: userId } } },
     });
-
-    // Limpa member-requests para permitir re-join
     await prisma.memberRequest.deleteMany({ where: { projectId, userId } });
 
-    // Notifica o líder
+    const newMemberCount = (project._count.members ?? 1) - 1;
+    const newStatus = resolveStatus(project.vacancies, newMemberCount, project.status);
+    if (newStatus !== project.status) {
+      await prisma.project.update({ where: { id: projectId }, data: { status: newStatus } });
+    }
+
     await NotificationService.create({
-      userId: project.ownerId,
-      type: "MEMBER_LEFT",
-      message: `${member.name} saiu do projeto "${project.title}"`,
+      userId:    project.ownerId,
+      type:      "MEMBER_LEFT",
+      message:   `${member.name} saiu do projeto "${project.title}"`,
       projectId,
     });
+    if (project.owner) {
+      await sendProjectEmail(
+        project.owner.email,
+        project.owner.name,
+        `Membro saiu do projeto — ${project.title}`,
+        `<strong>${member.name}</strong> saiu do projeto <strong>"${project.title}"</strong>.`,
+      );
+    }
 
     return { message: "Você saiu do projeto com sucesso" };
   }
 
   async removeMember(projectId: string, memberId: string, requesterId: string) {
     const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      include: { members: { select: { id: true } } },
+      where:   { id: projectId },
+      include: {
+        members: { select: { id: true, name: true, email: true } },
+        _count:  { select: { members: true } },
+      },
     });
-    if (!project) throw new HttpError(404, "Projeto não encontrado");
-    if (project.ownerId !== requesterId) throw new HttpError(403, "Apenas o líder pode remover membros");
-    if (project.ownerId === memberId) throw new HttpError(400, "Não é possível remover o líder do projeto");
+    if (!project)                          throw new HttpError(404, "Projeto não encontrado");
+    if (project.ownerId !== requesterId)   throw new HttpError(403, "Apenas o líder pode remover membros");
+    if (project.ownerId === memberId)      throw new HttpError(400, "Não é possível remover o líder do projeto");
 
-    const isMember = project.members.some((m) => m.id === memberId);
-    if (!isMember) throw new HttpError(404, "Membro não encontrado no projeto");
+    const member = project.members.find((m) => m.id === memberId);
+    if (!member) throw new HttpError(404, "Membro não encontrado no projeto");
 
     await prisma.project.update({
       where: { id: projectId },
-      data: { members: { disconnect: { id: memberId } } },
+      data:  { members: { disconnect: { id: memberId } } },
     });
-
-    // Limpa member-requests para permitir re-join
     await prisma.memberRequest.deleteMany({ where: { projectId, userId: memberId } });
 
-    // Notifica o membro removido
+    const newMemberCount = (project._count.members ?? 1) - 1;
+    const newStatus = resolveStatus(project.vacancies, newMemberCount, project.status);
+    if (newStatus !== project.status) {
+      await prisma.project.update({ where: { id: projectId }, data: { status: newStatus } });
+    }
+
     await NotificationService.create({
-      userId: memberId,
-      type: "MEMBER_REMOVED",
-      message: `Você foi removido do projeto "${project.title}"`,
+      userId:    memberId,
+      type:      "MEMBER_REMOVED",
+      message:   `Você foi removido do projeto "${project.title}"`,
       projectId,
     });
+    if (member.email) {
+      await sendProjectEmail(
+        member.email,
+        member.name,
+        `Você foi removido do projeto — ${project.title}`,
+        `Você foi removido do projeto <strong>"${project.title}"</strong> pelo professor responsável.`,
+      );
+    }
 
     return { message: "Membro removido com sucesso" };
   }

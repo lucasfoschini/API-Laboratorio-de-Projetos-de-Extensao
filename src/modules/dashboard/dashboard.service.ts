@@ -1,71 +1,83 @@
 import { prisma } from "../../config/prisma";
+import { cached, invalidateByPrefix } from "../../config/cache";
 
 export class DashboardService {
   async overview(userId: string) {
-    const [stats, projects, requests, pendingRequests, subscriptions] = await Promise.all([
-      this.stats(userId),
-      this.myProjects(userId),
-      this.myRequests(userId),
-      this.pendingRequests(userId),
-      this.mySubscriptions(userId),
-    ]);
-    return { stats, projects, requests, pendingRequests, subscriptions };
+    // Cache por usuário — 30 segundos
+    return cached(`dashboard:overview:${userId}`, 30, async () => {
+      const [stats, projects, requests, pendingRequests, subscriptions] = await Promise.all([
+        this.stats(userId),
+        this.myProjects(userId),
+        this.myRequests(userId),
+        this.pendingRequests(userId),
+        this.mySubscriptions(userId),
+      ]);
+      return { stats, projects, requests, pendingRequests, subscriptions };
+    });
   }
 
   async notificationSummary(userId: string) {
-    const [pendingRequests, subscriptions, systemNotifications] = await Promise.all([
-      prisma.memberRequest.findMany({
-        where: { project: { ownerId: userId }, status: "PENDING" },
-        include: {
-          user:    { select: { id: true, name: true, avatar: true } },
-          project: { select: { id: true, title: true } },
-        },
-        orderBy: { createdAt: "desc" },
-        take: 10,
-      }),
-      prisma.subscription.findMany({
-        where: { userId },
-        select: { projectId: true, createdAt: true },
-      }),
-      prisma.notification.findMany({
-        where: { userId, read: false },
-        orderBy: { createdAt: "desc" },
-        take: 10,
-      }),
-    ]);
-
-    let posts: any[]        = [];
-    let publications: any[] = [];
-
-    if (subscriptions.length > 0) {
-      const projectFilters = subscriptions.map((s) => ({
-        projectId: s.projectId,
-        createdAt: { gte: s.createdAt },
-      }));
-
-      [posts, publications] = await Promise.all([
-        prisma.post.findMany({
-          where: { OR: projectFilters },
-          include: { project: { select: { id: true, title: true } } },
+    // Cache por usuário — 60 segundos
+    return cached(`dashboard:notif:${userId}`, 60, async () => {
+      const [pendingRequests, subscriptions, systemNotifications] = await Promise.all([
+        prisma.memberRequest.findMany({
+          where: { project: { ownerId: userId }, status: "PENDING" },
+          include: {
+            user:    { select: { id: true, name: true, avatar: true } },
+            project: { select: { id: true, title: true } },
+          },
           orderBy: { createdAt: "desc" },
-          take: 20,
+          take: 10,
         }),
-        // ✅ Só publicações aprovadas no sino
-        prisma.publication.findMany({
-          where: { OR: projectFilters.map(f => ({ ...f, approved: true })) },
-          include: { project: { select: { id: true, title: true } } },
+        prisma.subscription.findMany({
+          where: { userId },
+          select: { projectId: true, createdAt: true },
+        }),
+        prisma.notification.findMany({
+          where: { userId, read: false },
           orderBy: { createdAt: "desc" },
           take: 10,
         }),
       ]);
-    }
 
-    return {
-      pendingRequests,
-      subscriptions,
-      activity: { posts, publications },
-      systemNotifications,
-    };
+      let posts: any[]        = [];
+      let publications: any[] = [];
+
+      if (subscriptions.length > 0) {
+        const projectFilters = subscriptions.map((s) => ({
+          projectId: s.projectId,
+          createdAt: { gte: s.createdAt },
+        }));
+
+        [posts, publications] = await Promise.all([
+          prisma.post.findMany({
+            where: { OR: projectFilters },
+            include: { project: { select: { id: true, title: true } } },
+            orderBy: { createdAt: "desc" },
+            take: 20,
+          }),
+          prisma.publication.findMany({
+            where: { OR: projectFilters.map(f => ({ ...f, approved: true })) },
+            include: { project: { select: { id: true, title: true } } },
+            orderBy: { createdAt: "desc" },
+            take: 10,
+          }),
+        ]);
+      }
+
+      return {
+        pendingRequests,
+        subscriptions,
+        activity: { posts, publications },
+        systemNotifications,
+      };
+    });
+  }
+
+  // Invalida o cache do usuário quando dados mudam
+  static invalidateUser(userId: string) {
+    invalidateByPrefix(`dashboard:overview:${userId}`);
+    invalidateByPrefix(`dashboard:notif:${userId}`);
   }
 
   async stats(userId: string) {
@@ -152,7 +164,6 @@ export class DashboardService {
         orderBy: { createdAt: "desc" },
         take: 20,
       }),
-      // ✅ Só publicações aprovadas
       prisma.publication.findMany({
         where: { OR: projectFilters.map(f => ({ ...f, approved: true })) },
         include: { project: { select: { id: true, title: true } } },

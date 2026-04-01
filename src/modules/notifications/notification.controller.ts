@@ -17,4 +17,18 @@ export class NotificationController {
       res.json(await svc.markAsRead(req.params.id as string, req.user.id));
     } catch (e) { next(e); }
   }
+
+  async markAllRead(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) { res.status(401).json({ message: "Unauthorized" }); return; }
+      res.json(await svc.markAllRead(req.user.id));
+    } catch (e) { next(e); }
+  }
+
+  async deleteAllRead(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) { res.status(401).json({ message: "Unauthorized" }); return; }
+      res.json(await svc.deleteAllRead(req.user.id));
+    } catch (e) { next(e); }
+  }
 }

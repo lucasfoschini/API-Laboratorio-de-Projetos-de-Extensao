@@ -28,8 +28,3 @@ export function verifyRefreshToken(token: string): TokenPayload {
   return jwt.verify(token, env.JWT_REFRESH_SECRET) as TokenPayload;
 }
 
-/** @deprecated use verifyAccessToken */
-export const verifyToken = verifyAccessToken;
-
-/** @deprecated use signAccessToken */
-export const signToken = signAccessToken;

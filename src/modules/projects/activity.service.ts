@@ -1,25 +1,23 @@
 import { prisma } from "../../config/prisma";
 import { HttpError } from "../../utils/http-error";
 import { NotificationService } from "../notifications/notification.service";
-import { Resend } from "resend";
-import { env } from "../../config/env";
-
-const resend = new Resend(env.RESEND_API_KEY);
+import { resend } from "../../lib/mailer";
+import { escapeHtml } from "../../utils/email";
 
 async function sendActivityEmail(to: string, name: string, projectTitle: string, activityTitle: string, description: string, dueDate: Date) {
   try {
     await resend.emails.send({
       from:    "LEXA <no-reply@resend.dev>",
       to,
-      subject: `Nova atividade atribuída — ${projectTitle}`,
+      subject: `Nova atividade atribuída — ${escapeHtml(projectTitle)}`,
       html: `
         <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
           <h2 style="color: #1e1e2e; margin-bottom: 8px;">LEXA — Laboratório de Extensão Ativo</h2>
-          <p style="color: #555; margin-bottom: 16px;">Olá, ${name}.</p>
-          <p style="color: #333; margin-bottom: 8px;">Uma nova atividade foi atribuída a você no projeto <strong>"${projectTitle}"</strong>:</p>
+          <p style="color: #555; margin-bottom: 16px;">Olá, ${escapeHtml(name)}.</p>
+          <p style="color: #333; margin-bottom: 8px;">Uma nova atividade foi atribuída a você no projeto <strong>"${escapeHtml(projectTitle)}"</strong>:</p>
           <div style="background: #f5f5f5; border-left: 4px solid #6d28d9; padding: 12px 16px; margin-bottom: 16px; border-radius: 4px;">
-            <p style="margin: 0 0 4px; font-weight: bold; color: #1e1e2e;">${activityTitle}</p>
-            <p style="margin: 0 0 8px; color: #555; font-size: 14px;">${description}</p>
+            <p style="margin: 0 0 4px; font-weight: bold; color: #1e1e2e;">${escapeHtml(activityTitle)}</p>
+            <p style="margin: 0 0 8px; color: #555; font-size: 14px;">${escapeHtml(description)}</p>
             <p style="margin: 0; color: #888; font-size: 13px;">Prazo: <strong>${dueDate.toLocaleDateString("pt-BR")}</strong></p>
           </div>
           <p style="color: #999; font-size: 13px; margin-top: 24px;">Este é um e-mail automático, não responda.</p>

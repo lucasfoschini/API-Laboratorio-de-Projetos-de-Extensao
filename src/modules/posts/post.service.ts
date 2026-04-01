@@ -1,10 +1,8 @@
 import { MediaType } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { HttpError } from "../../utils/http-error";
-import { Resend } from "resend";
-import { env } from "../../config/env";
-
-const resend = new Resend(env.RESEND_API_KEY);
+import { resend } from "../../lib/mailer";
+import { escapeHtml } from "../../utils/email";
 
 interface MediaInput { type: MediaType; url: string; title?: string; caption?: string; }
 
@@ -31,14 +29,14 @@ async function sendTopicEmail(to: string, name: string, projectTitle: string, to
     await resend.emails.send({
       from:    "LEXA <no-reply@resend.dev>",
       to,
-      subject: `Novo tópico em "${projectTitle}"`,
+      subject: `Novo tópico em "${escapeHtml(projectTitle)}"`,
       html: `
         <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
           <h2 style="color: #1e1e2e; margin-bottom: 8px;">LEXA — Laboratório de Extensão Ativo</h2>
-          <p style="color: #555; margin-bottom: 16px;">Olá, ${name}.</p>
+          <p style="color: #555; margin-bottom: 16px;">Olá, ${escapeHtml(name)}.</p>
           <p style="color: #333; margin-bottom: 24px;">
-            Um novo tópico foi criado no projeto <strong>"${projectTitle}"</strong>:<br/>
-            <strong>${topicTitle}</strong>
+            Um novo tópico foi criado no projeto <strong>"${escapeHtml(projectTitle)}"</strong>:<br/>
+            <strong>${escapeHtml(topicTitle)}</strong>
           </p>
           <p style="color: #999; font-size: 13px; margin-top: 24px;">Este é um e-mail automático, não responda.</p>
         </div>

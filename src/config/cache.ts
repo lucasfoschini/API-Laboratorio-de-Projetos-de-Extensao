@@ -5,7 +5,7 @@
 import NodeCache from "node-cache";
 
 // TTL padrão: 60 segundos
-const cache = new NodeCache({ stdTTL: 60, checkperiod: 30, useClones: false });
+const cache = new NodeCache({ stdTTL: 60, checkperiod: 30, useClones: true });
 
 export function cached<T>(
   key: string,

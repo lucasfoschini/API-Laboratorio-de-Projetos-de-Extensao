@@ -2,11 +2,10 @@ import { prisma } from "../../config/prisma";
 import { HttpError } from "../../utils/http-error";
 import { PublicationType, Prisma } from "@prisma/client";
 import { NotificationService } from "../notifications/notification.service";
-import { Resend } from "resend";
-import { env } from "../../config/env";
+import { resend } from "../../lib/mailer";
+import { escapeHtml } from "../../utils/email";
 import { cached, invalidateByPrefix } from "../../config/cache";
-
-const resend = new Resend(env.RESEND_API_KEY);
+import { DashboardService } from "../dashboard/dashboard.service";
 
 interface CreatePublicationInput {
   title:       string;
@@ -37,14 +36,16 @@ async function sendPublicationEmail(to: string, name: string, subject: string, b
     await resend.emails.send({
       from:    "LEXA <no-reply@resend.dev>",
       to,
-      subject,
+      subject: escapeHtml(subject),
       html: `
         <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
           <h2 style="color: #1e1e2e; margin-bottom: 8px;">LEXA — Laboratório de Extensão Ativo</h2>
-          <p style="color: #555; margin-bottom: 16px;">Olá, ${name}.</p>
-          <p style="color: #333; margin-bottom: 24px;">${body}</p>
-          <p style="color: #999; font-size: 13px; margin-top: 24px;">
-            Este é um e-mail automático, não responda.
+          <p style="color: #555; margin-bottom: 16px;">Olá, ${escapeHtml(name)}.</p>
+          <div style="color: #333; line-height: 1.6; margin-bottom: 24px;">
+            ${body}
+          </div>
+          <p style="color: #999; font-size: 13px; margin-top: 24px; border-top: 1px dotted #ccc; padding-top: 16px;">
+            Este é um e-mail automático enviado pela plataforma LEXA, não responda.
           </p>
         </div>
       `,
@@ -182,6 +183,7 @@ export class PublicationService {
       include: {
         project: { select: { ownerId: true, title: true } },
         user:    { select: { id: true, name: true, email: true } },
+        authors: { select: { id: true } },
       },
     });
     if (!pub) throw new HttpError(404, "Publicação não encontrada");
@@ -189,8 +191,16 @@ export class PublicationService {
 
     const updated = await prisma.publication.update({
       where:   { id },
-      data:    { approved: true },
+      data:    { approved: true, revisionRequested: false },
       include: PUBLICATION_INCLUDE,
+    });
+
+    // Limpa sugestões antigas desta publicação
+    await prisma.notification.deleteMany({
+      where: {
+        type:    "PUBLICATION_SUGGESTION",
+        message: { contains: `[pubId:${id}]` }
+      }
     });
 
     invalidateByPrefix("publications:list");
@@ -239,6 +249,13 @@ export class PublicationService {
       }
     }
 
+    // Invalida o cache do dashboard de todos os envolvidos
+    const participants = [
+      ...(pub.userId ? [pub.userId] : []),
+      ...pub.authors.map(a => a.id)
+    ];
+    [...new Set(participants)].forEach(pid => DashboardService.invalidateUser(pid));
+
     return updated;
   }
 
@@ -275,27 +292,18 @@ export class PublicationService {
       });
 
       if (recipient.email) {
-        try {
-          await resend.emails.send({
-            from:    "LEXA <no-reply@resend.dev>",
-            to:      recipient.email,
-            subject: `Sugestões de revisão — ${pub.title}`,
-            html: `
-              <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
-                <h2 style="color: #1e1e2e; margin-bottom: 8px;">LEXA — Laboratório de Extensão Ativo</h2>
-                <p style="color: #555; margin-bottom: 16px;">Olá, ${recipient.name}.</p>
-                <p style="color: #333; margin-bottom: 8px;">
-                  O professor responsável pelo projeto <strong>"${pub.project.title}"</strong> enviou sugestões de revisão para sua publicação <strong>"${pub.title}"</strong>:
-                </p>
-                <div style="background: #fefce8; border-left: 4px solid #ca8a04; padding: 12px 16px; margin-bottom: 16px; border-radius: 4px;">
-                  <p style="margin: 0; color: #333; font-size: 14px; white-space: pre-line;">${suggestion}</p>
-                </div>
-                <p style="color: #555; font-size: 13px;">Por favor, edite sua publicação considerando as sugestões e reenvie para aprovação.</p>
-                <p style="color: #999; font-size: 13px; margin-top: 24px;">Este é um e-mail automático, não responda.</p>
-              </div>
-            `,
-          });
-        } catch { /* não bloqueia */ }
+        await sendPublicationEmail(
+          recipient.email,
+          recipient.name,
+          `Sugestões de revisão — ${pub.title}`,
+          `
+            <p style="margin-bottom: 16px;">O professor responsável pelo projeto <strong>"${pub.project.title}"</strong> enviou sugestões de revisão para sua publicação <strong>"${pub.title}"</strong>:</p>
+            <div style="background: #fefce8; border-left: 4px solid #ca8a04; padding: 12px 16px; margin-bottom: 20px; border-radius: 4px; font-style: italic; color: #854d0e;">
+              ${escapeHtml(suggestion).replace(/\n/g, '<br/>')}
+            </div>
+            <p style="font-size: 14px; color: #666;">Por favor, edite sua publicação considerando as sugestões acima e reenvie para aprovação.</p>
+          `
+        );
       }
     }
 
@@ -308,12 +316,21 @@ export class PublicationService {
       include: {
         project: { select: { ownerId: true, title: true } },
         user:    { select: { id: true, name: true, email: true } },
+        authors: { select: { id: true } },
       },
     });
     if (!pub) throw new HttpError(404, "Publicação não encontrada");
     if (pub.project.ownerId !== userId) throw new HttpError(403, "Apenas o professor do projeto pode recusar publicações");
 
     await prisma.publication.delete({ where: { id } });
+
+    // Limpa sugestões antigas desta publicação
+    await prisma.notification.deleteMany({
+      where: {
+        type:    "PUBLICATION_SUGGESTION",
+        message: { contains: `[pubId:${id}]` }
+      }
+    });
 
     invalidateByPrefix("publications:list");
 
@@ -332,6 +349,13 @@ export class PublicationService {
         `Sua publicação <strong>"${pub.title}"</strong> foi <strong style="color:#dc2626">recusada</strong> pelo professor responsável pelo projeto <strong>"${pub.project.title}"</strong>.${reason ? `<br/><br/><strong>Motivo:</strong> ${reason}` : ""}`,
       );
     }
+
+    // Invalida o cache do dashboard de todos os envolvidos
+    const participants = [
+      ...(pub.userId ? [pub.userId] : []),
+      ...pub.authors.map(a => a.id)
+    ];
+    [...new Set(participants)].forEach(pid => DashboardService.invalidateUser(pid));
 
     return { message: "Publicação recusada e removida" };
   }
@@ -364,7 +388,23 @@ export class PublicationService {
     }
 
     await prisma.publication.delete({ where: { id } });
+
+    // Limpa sugestões antigas desta publicação
+    await prisma.notification.deleteMany({
+      where: {
+        type:    "PUBLICATION_SUGGESTION",
+        message: { contains: `[pubId:${id}]` }
+      }
+    });
+
     invalidateByPrefix("publications:list");
+
+    // Invalida o cache do dashboard
+    const participants = [
+      ...(pub.userId ? [pub.userId] : []),
+      ...pub.authors.map(a => a.id)
+    ];
+    [...new Set(participants)].forEach(pid => DashboardService.invalidateUser(pid));
   }
 
   async update(id: string, userId: string, input: Partial<CreatePublicationInput>) {
@@ -406,6 +446,14 @@ export class PublicationService {
     if (wasRevisionRequested) {
       data.revisionRequested = false;
       data.approved          = false;
+
+      // Limpa as notificações de sugestão desta publicação para TODOS os membros
+      await prisma.notification.deleteMany({
+        where: {
+          type: "PUBLICATION_SUGGESTION",
+          message: { contains: `[pubId:${id}]` }
+        }
+      });
     }
 
     if (authorIds !== undefined) {
@@ -440,6 +488,13 @@ export class PublicationService {
         );
       }
     }
+
+    // Invalida o cache do dashboard de todos os membros envolvidos
+    const participants = [
+      ...(pub.userId ? [pub.userId] : []),
+      ...pub.authors.map(a => a.id)
+    ];
+    [...new Set(participants)].forEach(pid => DashboardService.invalidateUser(pid));
 
     return updated;
   }

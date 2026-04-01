@@ -2,28 +2,31 @@ import { MemberRequestStatus } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { HttpError } from "../../utils/http-error";
 import { NotificationService } from "../notifications/notification.service";
-import { Resend } from "resend";
-import { env } from "../../config/env";
-
-const resend = new Resend(env.RESEND_API_KEY);
+import { DashboardService } from "../dashboard/dashboard.service";
+import { resend } from "../../lib/mailer";
+import { escapeHtml } from "../../utils/email";
 
 async function sendRequestEmail(to: string, name: string, subject: string, body: string) {
   try {
     await resend.emails.send({
       from: "LEXA <no-reply@resend.dev>",
       to,
-      subject,
+      subject: escapeHtml(subject),
       html: `
         <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
           <h2 style="color: #1e1e2e; margin-bottom: 8px;">LEXA — Laboratório de Extensão Ativo</h2>
-          <p style="color: #555; margin-bottom: 16px;">Olá, ${name}.</p>
-          <p style="color: #333; margin-bottom: 24px;">${body}</p>
-          <p style="color: #999; font-size: 13px; margin-top: 24px;">Este é um e-mail automático, não responda.</p>
+          <p style="color: #555; margin-bottom: 16px;">Olá, ${escapeHtml(name)}.</p>
+          <div style="color: #333; line-height: 1.6; margin-bottom: 24px;">
+            ${body}
+          </div>
+          <p style="color: #999; font-size: 13px; margin-top: 24px; border-top: 1px dotted #ccc; padding-top: 16px;">
+            Este é um e-mail automático, não responda.
+          </p>
         </div>
       `,
     });
   } catch {
-    // Não bloqueia a operação se e-mail falhar
+    // Falha silenciosa para não bloquear a criação da solicitação
   }
 }
 
@@ -34,7 +37,10 @@ const INCLUDE = {
 
 export class MemberRequestService {
   async create(projectId: string, userId: string, message: string) {
-    const project = await prisma.project.findUnique({ where: { id: projectId } });
+    const project = await prisma.project.findUnique({
+      where:   { id: projectId },
+      include: { owner: { select: { id: true, name: true, email: true } } },
+    });
     if (!project) throw new HttpError(404, "Projeto não encontrado");
     if (project.ownerId === userId) throw new HttpError(400, "Você é o criador deste projeto");
 
@@ -48,10 +54,31 @@ export class MemberRequestService {
     });
     if (existing) throw new HttpError(409, "Você já enviou uma solicitação para este projeto");
 
-    return prisma.memberRequest.create({
-      data: { projectId, userId, message },
+    // Busca o nome do solicitante para a notificação e e-mail
+    const requester = await prisma.user.findUnique({
+      where:  { id: userId },
+      select: { name: true },
+    });
+
+    const result = await prisma.memberRequest.create({
+      data:    { projectId, userId, message },
       include: INCLUDE,
     });
+
+    // Envia e-mail para o dono do projeto
+    if (project.owner?.email) {
+      await sendRequestEmail(
+        project.owner.email,
+        project.owner.name,
+        `Nova solicitação de entrada — ${project.title}`,
+        `O aluno <strong>${requester?.name ?? "Alguém"}</strong> enviou uma solicitação para participar do seu projeto <strong>"${project.title}"</strong>. Você pode revisar esta solicitação no seu dashboard.`,
+      );
+    }
+
+    // Invalida o cache de notificações do dono para que a solicitação apareça imediatamente no sininho
+    DashboardService.invalidateUser(project.ownerId);
+
+    return result;
   }
 
   async listByProject(projectId: string, requesterId: string) {
@@ -149,6 +176,11 @@ export class MemberRequestService {
         );
       }
     }
+
+    // Invalida o cache do dashboard para ambos os usuários envolvidos
+    // (sem isso, o servidor devolve dados stale por até 30s e a solicitação reaparece)
+    DashboardService.invalidateUser(reviewerId);
+    DashboardService.invalidateUser(req.userId);
 
     return result;
   }

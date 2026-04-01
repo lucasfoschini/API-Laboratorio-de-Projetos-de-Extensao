@@ -3,8 +3,10 @@ import crypto from "crypto";
 import { Role } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { HttpError } from "../../utils/http-error";
-import { signAccessToken, signRefreshToken, verifyToken } from "../../utils/jwt";
+import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../../utils/jwt";
 import { sendPasswordResetEmail } from "../../utils/email";
+import { env } from "../../config/env";
+import { USER_SELECT } from "../../constants/selects";
 
 interface RegisterInput {
   name:        string;
@@ -19,21 +21,6 @@ interface LoginInput {
   email:    string;
   password: string;
 }
-
-const USER_SELECT = {
-  id:          true,
-  name:        true,
-  email:       true,
-  role:        true,
-  department:  true,
-  institution: true,
-  avatar:      true,
-  createdAt:   true,
-  bio:         true,
-  linkedin:    true,
-  github:      true,
-  phone:       true,
-} as const;
 
 export class AuthService {
   async updateMe(userId: string, input: {
@@ -61,7 +48,7 @@ export class AuthService {
     const existing = await prisma.user.findUnique({ where: { email: input.email } });
     if (existing) throw new HttpError(409, "E-mail já cadastrado");
 
-    const hashedPassword = await bcrypt.hash(input.password, 10);
+    const hashedPassword = await bcrypt.hash(input.password, env.BCRYPT_SALT_ROUNDS);
 
     const user = await prisma.user.create({
       data: {
@@ -107,7 +94,7 @@ export class AuthService {
 
   async refresh(refreshToken: string) {
     try {
-      const payload = verifyToken(refreshToken);
+      const payload = verifyRefreshToken(refreshToken);
       const user = await prisma.user.findUnique({
         where:  { id: payload.sub },
         select: USER_SELECT,
@@ -162,7 +149,7 @@ export class AuthService {
     if (!record || record.used || record.expiresAt < new Date())
       throw new HttpError(400, "Token inválido ou expirado.");
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const hashedPassword = await bcrypt.hash(newPassword, env.BCRYPT_SALT_ROUNDS);
 
     await prisma.user.update({
       where: { id: record.userId },

@@ -3,15 +3,9 @@ import { z } from "zod";
 import { authMiddleware, optionalAuthMiddleware } from "../../middlewares/auth.middleware";
 import { validate } from "../../middlewares/validate.middleware";
 import { prisma } from "../../config/prisma";
+import { USER_SELECT } from "../../constants/selects";
 
 export const userRoutes = Router();
-
-const USER_SELECT = {
-  id: true, name: true, email: true, role: true,
-  institution: true, department: true, bio: true,
-  avatar: true, phone: true, linkedin: true, github: true, website: true,
-  createdAt: true,
-} as const;
 
 // Helper: string vazia → null, senão valida normalmente
 const optStr = (max: number) =>

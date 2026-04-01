@@ -2,11 +2,9 @@ import { ProjectArea, ProjectCategory, ProjectStatus } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { HttpError } from "../../utils/http-error";
 import { NotificationService } from "../notifications/notification.service";
-import { Resend } from "resend";
-import { env } from "../../config/env";
+import { resend } from "../../lib/mailer";
+import { escapeHtml } from "../../utils/email";
 import { cached, invalidateByPrefix } from "../../config/cache";
-
-const resend = new Resend(env.RESEND_API_KEY);
 
 const VALID_CATEGORIES = Object.values(ProjectCategory) as string[];
 
@@ -15,12 +13,12 @@ async function sendProjectEmail(to: string, name: string, subject: string, body:
     await resend.emails.send({
       from: "LEXA <no-reply@resend.dev>",
       to,
-      subject,
+      subject: escapeHtml(subject),
       html: `
         <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
           <h2 style="color: #1e1e2e; margin-bottom: 8px;">LEXA — Laboratório de Extensão Ativo</h2>
-          <p style="color: #555; margin-bottom: 16px;">Olá, ${name}.</p>
-          <p style="color: #333; margin-bottom: 24px;">${body}</p>
+          <p style="color: #555; margin-bottom: 16px;">Olá, ${escapeHtml(name)}.</p>
+          <p style="color: #333; margin-bottom: 24px;">${escapeHtml(body)}</p>
           <p style="color: #999; font-size: 13px; margin-top: 24px;">Este é um e-mail automático, não responda.</p>
         </div>
       `,

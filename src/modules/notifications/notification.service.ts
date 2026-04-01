@@ -3,6 +3,16 @@ import { HttpError } from "../../utils/http-error";
 
 export class NotificationService {
   async list(userId: string) {
+    // Autolimpeza: remove notificações lidas mais velhas que 7 dias
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    await prisma.notification.deleteMany({
+      where: {
+        userId,
+        read: true,
+        createdAt: { lt: sevenDaysAgo }
+      }
+    }).catch(e => console.error("Erro na autolimpeza de notificações:", e));
+
     return prisma.notification.findMany({
       where: { userId },
       include: {
@@ -22,6 +32,19 @@ export class NotificationService {
     return prisma.notification.update({
       where: { id: notificationId },
       data: { read: true },
+    });
+  }
+
+  async markAllRead(userId: string) {
+    return prisma.notification.updateMany({
+      where: { userId, read: false },
+      data:  { read: true },
+    });
+  }
+
+  async deleteAllRead(userId: string) {
+    return prisma.notification.deleteMany({
+      where: { userId, read: true },
     });
   }
 

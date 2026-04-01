@@ -3,6 +3,7 @@ import cors from "cors";
 import express from "express";
 import compression from "compression";
 import helmet from "helmet";
+import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
 import { env } from "./config/env";
 import { errorHandler } from "./middlewares/error.middleware";
@@ -12,6 +13,9 @@ const app = express();
 
 // ── Security headers ──────────────────────────────────────────────────────────
 app.use(helmet());
+
+// ── Leitura de cookies (necessário para auth via HttpOnly cookies) ────────────
+app.use(cookieParser());
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 const allowedOrigins = env.CORS_ORIGIN.split(",")

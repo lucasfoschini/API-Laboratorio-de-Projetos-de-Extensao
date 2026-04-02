@@ -11,6 +11,11 @@ import { routes } from "./routes";
 
 const app = express();
 
+// ── Trust Proxy ───────────────────────────────────────────────────────────────
+// Necessário para que o rate-limit considere o IP real do usuário em vez do IP
+// do proxy (Vercel ou Load Balancers do Render), lendo do X-Forwarded-For.
+app.set("trust proxy", true);
+
 // ── Security headers ──────────────────────────────────────────────────────────
 app.use(helmet());
 

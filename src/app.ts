@@ -14,7 +14,9 @@ const app = express();
 // ── Trust Proxy ───────────────────────────────────────────────────────────────
 // Necessário para que o rate-limit considere o IP real do usuário em vez do IP
 // do proxy (Vercel ou Load Balancers do Render), lendo do X-Forwarded-For.
-app.set("trust proxy", true);
+// Valor 1 = confia apenas no primeiro proxy à frente (o do Render/Vercel),
+// prevenindo IP spoofing via X-Forwarded-For forjado pelo cliente.
+app.set("trust proxy", 1);
 
 // ── Security headers ──────────────────────────────────────────────────────────
 app.use(helmet());

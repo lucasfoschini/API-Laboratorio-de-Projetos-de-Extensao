@@ -1,5 +1,6 @@
 import { prisma } from "../../config/prisma";
 import { HttpError } from "../../utils/http-error";
+import { sseManager } from "../../config/sse";
 
 export class NotificationService {
   async list(userId: string) {
@@ -50,6 +51,18 @@ export class NotificationService {
 
   /** Helper estático para criar notificações a partir de outros services */
   static async create(data: { userId: string; type: string; message: string; projectId?: string }) {
-    return prisma.notification.create({ data });
+    const notification = await prisma.notification.create({ data });
+
+    // Emite evento SSE em tempo real para o usuário destinatário (se conectado)
+    sseManager.emit(data.userId, "notification", {
+      id:        notification.id,
+      type:      notification.type,
+      message:   notification.message,
+      projectId: notification.projectId ?? null,
+      createdAt: notification.createdAt,
+    });
+
+    return notification;
   }
 }
+

@@ -124,6 +124,11 @@ model Project {
   publications   Publication[]
   posts          Post[]
   notifications  Notification[]
+
+  @@index([ownerId])              // projetos do dono (dashboard do professor)
+  @@index([status])               // filtrar por status (ABERTO, EM_ANDAMENTO, etc.)
+  @@index([createdAt])            // ordenação por mais recente
+  @@index([status, createdAt])    // listagem pública filtrada e ordenada
 }
 
 // ─── Solicitação de entrada no grupo ─────────────────────────────────────────
@@ -139,8 +144,9 @@ model MemberRequest {
   user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, userId])
-  @@index([projectId, status])
-  @@index([userId])
+  @@index([projectId, status])    // requests de um projeto filtradas por status
+  @@index([userId])               // requests de um usuário
+  @@index([userId, status])       // requests pendentes de um usuário (dashboard)
 }
 
 // ─── Inscrição para acompanhar atualizações ───────────────────────────────────
@@ -173,8 +179,9 @@ model Post {
 
   media Media[]
 
-  @@index([projectId])
-  @@index([authorId])
+  @@index([projectId])                  // posts de um projeto
+  @@index([authorId])                   // posts de um autor
+  @@index([projectId, createdAt])       // posts de um projeto ordenados por data
 }
 
 // ─── Mídia anexada a posts ────────────────────────────────────────────────────
@@ -254,8 +261,9 @@ model Notification {
   projectId String?
   project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
-  @@index([userId, read])
-  @@index([userId])
+  @@index([userId, read])               // notificações não lidas por usuário
+  @@index([userId])                     // todas as notificações de um usuário
+  @@index([userId, createdAt])          // notificações ordenadas por data
 }
 
 model PasswordResetToken {

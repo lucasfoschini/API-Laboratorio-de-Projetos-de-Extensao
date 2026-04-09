@@ -6,6 +6,7 @@ import { resend } from "../../lib/mailer";
 import { escapeHtml } from "../../utils/email";
 import { cached, invalidateByPrefix } from "../../config/cache";
 import { DashboardService } from "../dashboard/dashboard.service";
+import { sseManager } from "../../config/sse";
 
 interface CreatePublicationInput {
   title:       string;
@@ -88,6 +89,7 @@ export class PublicationService {
     });
 
     invalidateByPrefix("publications:list");
+    sseManager.broadcast("global_publications_updated", { projectId: input.projectId });
 
     // Se for aluno, notifica o professor do projeto
     if (!approved && project.owner) {
@@ -204,6 +206,7 @@ export class PublicationService {
     });
 
     invalidateByPrefix("publications:list");
+    sseManager.broadcast("global_publications_updated", { projectId: pub.projectId });
 
     // Notifica o aluno criador
     if (pub.userId && pub.user) {
@@ -277,6 +280,8 @@ export class PublicationService {
       data:  { revisionRequested: true },
     });
 
+    sseManager.broadcast("global_publications_updated", { projectId: pub.projectId });
+
     // Notifica e envia e-mail para o criador e autores
     const recipients = [
       ...(pub.user ? [pub.user] : []),
@@ -333,6 +338,7 @@ export class PublicationService {
     });
 
     invalidateByPrefix("publications:list");
+    sseManager.broadcast("global_publications_updated", { projectId: pub.projectId });
 
     if (pub.userId && pub.user) {
       const reasonText = reason ? ` Motivo: ${reason}` : "";
@@ -398,6 +404,7 @@ export class PublicationService {
     });
 
     invalidateByPrefix("publications:list");
+    sseManager.broadcast("global_publications_updated", { projectId: pub.projectId });
 
     // Invalida o cache do dashboard
     const participants = [
@@ -465,6 +472,8 @@ export class PublicationService {
       data,
       include: PUBLICATION_INCLUDE,
     });
+
+    sseManager.broadcast("global_publications_updated", { projectId: updated.projectId });
 
     // Notifica o professor que o aluno resubmeteu
     if (wasRevisionRequested && pub.project?.ownerId && pub.project.ownerId !== userId) {

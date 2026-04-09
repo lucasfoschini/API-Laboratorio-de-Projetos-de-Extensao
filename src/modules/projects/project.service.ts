@@ -5,6 +5,7 @@ import { NotificationService } from "../notifications/notification.service";
 import { resend } from "../../lib/mailer";
 import { escapeHtml } from "../../utils/email";
 import { cached, invalidateByPrefix } from "../../config/cache";
+import { sseManager } from "../../config/sse";
 
 const VALID_CATEGORIES = Object.values(ProjectCategory) as string[];
 
@@ -137,6 +138,7 @@ export class ProjectService {
       include: detailInclude(),
     });
     invalidateByPrefix("projects:list");
+    sseManager.broadcast("global_projects_updated", { projectId: project.id });
     return toResponse(project);
   }
 
@@ -230,6 +232,7 @@ export class ProjectService {
       include: detailInclude(),
     });
     invalidateByPrefix("projects:list");
+    sseManager.broadcast("global_projects_updated", { projectId: id });
     return toResponse(updated);
   }
 
@@ -239,6 +242,7 @@ export class ProjectService {
     if (project.ownerId !== userId) throw new HttpError(403, "Apenas o criador pode excluir este projeto");
     await prisma.project.delete({ where: { id } });
     invalidateByPrefix("projects:list");
+    sseManager.broadcast("global_projects_updated", { projectId: id });
     return { message: "Projeto excluído com sucesso" };
   }
 
@@ -250,11 +254,13 @@ export class ProjectService {
       update: {},
       create: { projectId, userId },
     });
+    sseManager.broadcast("global_projects_updated", { projectId });
     return { subscribed: true, message: "Inscrito com sucesso" };
   }
 
   async unsubscribe(projectId: string, userId: string) {
     await prisma.subscription.deleteMany({ where: { projectId, userId } });
+    sseManager.broadcast("global_projects_updated", { projectId });
     return { subscribed: false, message: "Inscrição cancelada" };
   }
 
@@ -307,6 +313,14 @@ export class ProjectService {
       );
     }
 
+    const remainingMembers = project.members.filter(m => m.id !== userId);
+    for (const m of remainingMembers) {
+      if (m.id !== project.ownerId) {
+        sseManager.emit(m.id, "project_updated", { projectId });
+      }
+    }
+    sseManager.emit(project.ownerId, "project_updated", { projectId });
+
     return { message: "Você saiu do projeto com sucesso" };
   }
 
@@ -351,6 +365,14 @@ export class ProjectService {
         `Você foi removido do projeto <strong>"${project.title}"</strong> pelo professor responsável.`,
       );
     }
+
+    const remainingMembers = project.members.filter(m => m.id !== memberId);
+    for (const m of remainingMembers) {
+      if (m.id !== project.ownerId) {
+        sseManager.emit(m.id, "project_updated", { projectId });
+      }
+    }
+    sseManager.emit(project.ownerId, "project_updated", { projectId });
 
     return { message: "Membro removido com sucesso" };
   }

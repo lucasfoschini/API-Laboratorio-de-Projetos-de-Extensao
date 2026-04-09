@@ -3,6 +3,7 @@ import { prisma } from "../../config/prisma";
 import { HttpError } from "../../utils/http-error";
 import { resend } from "../../lib/mailer";
 import { escapeHtml } from "../../utils/email";
+import { sseManager } from "../../config/sse";
 
 interface MediaInput { type: MediaType; url: string; title?: string; caption?: string; }
 
@@ -76,6 +77,11 @@ export class PostService {
       )
     );
 
+    // Notifica instantaneamente todos os visualizadores/membros
+    project.members.forEach((m) => {
+      sseManager.emit(m.id, "posts_updated", { projectId });
+    });
+
     return post;
   }
 
@@ -119,7 +125,18 @@ export class PostService {
       data.media = { deleteMany: {}, create: input.media };
     }
 
-    return prisma.post.update({ where: { id: postId }, data, include: POST_INCLUDE });
+    const updatedPost = await prisma.post.update({ where: { id: postId }, data, include: POST_INCLUDE });
+
+    // Busca os membros para avisar do update
+    const project = await prisma.project.findUnique({
+      where: { id: updatedPost.projectId },
+      include: { members: { select: { id: true } } }
+    });
+    project?.members.forEach((m) => {
+      sseManager.emit(m.id, "posts_updated", { projectId: updatedPost.projectId });
+    });
+
+    return updatedPost;
   }
 
   async delete(postId: string, userId: string) {
@@ -130,6 +147,16 @@ export class PostService {
     const canDelete = post.authorId === userId || post.project.ownerId === userId;
     if (!canDelete) throw new HttpError(403, "Acesso negado");
     await prisma.post.delete({ where: { id: postId } });
+
+    // Avisa os membros do projeto sobre a remoção
+    const currentProject = await prisma.project.findUnique({
+      where: { id: post.projectId },
+      include: { members: { select: { id: true } } }
+    });
+    currentProject?.members.forEach((m) => {
+      sseManager.emit(m.id, "posts_updated", { projectId: post.projectId });
+    });
+
     return { message: "Post removido" };
   }
 }

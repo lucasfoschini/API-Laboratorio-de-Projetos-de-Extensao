@@ -5,6 +5,7 @@ import { NotificationService } from "../notifications/notification.service";
 import { DashboardService } from "../dashboard/dashboard.service";
 import { resend } from "../../lib/mailer";
 import { escapeHtml } from "../../utils/email";
+import { sseManager } from "../../config/sse";
 
 async function sendRequestEmail(to: string, name: string, subject: string, body: string) {
   try {
@@ -78,6 +79,9 @@ export class MemberRequestService {
     // Invalida o cache de notificações do dono para que a solicitação apareça imediatamente no sininho
     DashboardService.invalidateUser(project.ownerId);
 
+    // Ecoa para o Dashboard do dono a chegada de um pedido
+    sseManager.emit(project.ownerId, "member_requests_updated", { projectId });
+
     return result;
   }
 
@@ -131,13 +135,21 @@ export class MemberRequestService {
         // Recalcula status se lotou
         const afterCount = await tx.project.findUnique({
           where:   { id: req.projectId },
-          include: { _count: { select: { members: true } } },
+          include: { _count: { select: { members: true } }, members: { select: { id: true } } },
         });
-        if (afterCount && afterCount._count.members >= afterCount.vacancies && afterCount.status === "ABERTO") {
-          await tx.project.update({
-            where: { id: req.projectId },
-            data:  { status: "EM_ANDAMENTO" },
-          });
+        
+        if (afterCount) {
+          // Avisa a todos que uma vaga foi ocupada
+          for (const m of afterCount.members) {
+            sseManager.emit(m.id, "project_updated", { projectId: req.projectId });
+          }
+
+          if (afterCount._count.members >= afterCount.vacancies && afterCount.status === "ABERTO") {
+            await tx.project.update({
+              where: { id: req.projectId },
+              data:  { status: "EM_ANDAMENTO" },
+            });
+          }
         }
       }
 
@@ -182,6 +194,15 @@ export class MemberRequestService {
     DashboardService.invalidateUser(reviewerId);
     DashboardService.invalidateUser(req.userId);
 
+    // Ecoa na tela do Solicitante e do Revisor
+    sseManager.emit(req.userId, "member_requests_updated", { projectId: req.projectId });
+    sseManager.emit(reviewerId, "member_requests_updated", { projectId: req.projectId });
+
+    // Atualiza a listagem de membros do lado do cliente caso ele tenha entrado na página do projeto
+    if (status === MemberRequestStatus.APPROVED) {
+      sseManager.emit(req.userId, "project_updated", { projectId: req.projectId });
+    }
+
     return result;
   }
 
@@ -194,11 +215,18 @@ export class MemberRequestService {
   }
 
   async cancel(requestId: string, userId: string) {
-    const req = await prisma.memberRequest.findUnique({ where: { id: requestId } });
+    const req = await prisma.memberRequest.findUnique({ 
+      where: { id: requestId },
+      include: { project: { select: { ownerId: true } } }
+    });
     if (!req)                  throw new HttpError(404, "Solicitação não encontrada");
     if (req.userId !== userId) throw new HttpError(403, "Acesso negado");
     if (req.status !== MemberRequestStatus.PENDING) throw new HttpError(400, "Só é possível cancelar solicitações pendentes");
     await prisma.memberRequest.delete({ where: { id: requestId } });
+
+    sseManager.emit(userId, "member_requests_updated", { projectId: req.projectId });
+    sseManager.emit(req.project.ownerId, "member_requests_updated", { projectId: req.projectId });
+
     return { message: "Solicitação cancelada" };
   }
 }

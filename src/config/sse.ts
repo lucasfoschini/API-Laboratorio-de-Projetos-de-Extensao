@@ -48,6 +48,22 @@ class SseManager {
     }
   }
 
+  /**
+   * Emite um evento SSE global para TODAS as abas e usuários conectados.
+   */
+  broadcast(event: string, data: unknown): void {
+    const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    for (const set of this.connections.values()) {
+      for (const res of set) {
+        try {
+          res.write(payload);
+        } catch {
+          // ignora falhas individuais
+        }
+      }
+    }
+  }
+
   /** Retorna o número de conexões ativas (útil para logging/debug). */
   get activeConnections(): number {
     let total = 0;

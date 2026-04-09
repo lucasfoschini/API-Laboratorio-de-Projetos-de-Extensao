@@ -3,6 +3,7 @@ import { HttpError } from "../../utils/http-error";
 import { NotificationService } from "../notifications/notification.service";
 import { resend } from "../../lib/mailer";
 import { escapeHtml } from "../../utils/email";
+import { sseManager } from "../../config/sse";
 
 async function sendActivityEmail(to: string, name: string, projectTitle: string, activityTitle: string, description: string, dueDate: Date) {
   try {
@@ -86,6 +87,13 @@ export class ActivityService {
       }
     }
 
+    sseManager.emit(project.ownerId, "activities_updated", { projectId });
+    for (const resp of activity.responsibles) {
+      if (resp.id !== project.ownerId) {
+        sseManager.emit(resp.id, "activities_updated", { projectId });
+      }
+    }
+
     return activity;
   }
 
@@ -133,22 +141,42 @@ export class ActivityService {
     const isResponsible = activity.responsibles.some((r) => r.id === userId);
     if (!isOwner && !isResponsible) throw new HttpError(403, "Sem permissão para alterar esta atividade");
 
-    return prisma.activity.update({
+    const updated = await prisma.activity.update({
       where:   { id: activityId },
       data:    { done: !activity.done },
       include: ACTIVITY_INCLUDE,
     });
+
+    sseManager.emit(updated.project.ownerId, "activities_updated", { projectId: updated.projectId });
+    for (const resp of updated.responsibles) {
+      if (resp.id !== updated.project.ownerId) {
+        sseManager.emit(resp.id, "activities_updated", { projectId: updated.projectId });
+      }
+    }
+
+    return updated;
   }
 
   async delete(activityId: string, userId: string) {
     const activity = await prisma.activity.findUnique({
       where:   { id: activityId },
-      include: { project: { select: { ownerId: true } } },
+      include: { 
+        project: { select: { ownerId: true } },
+        responsibles: { select: { id: true } }
+      },
     });
     if (!activity) throw new HttpError(404, "Atividade não encontrada");
     if (activity.project.ownerId !== userId) throw new HttpError(403, "Apenas o professor do projeto pode excluir atividades");
 
     await prisma.activity.delete({ where: { id: activityId } });
+
+    sseManager.emit(activity.project.ownerId, "activities_updated", { projectId: activity.projectId });
+    for (const resp of activity.responsibles) {
+      if (resp.id !== activity.project.ownerId) {
+        sseManager.emit(resp.id, "activities_updated", { projectId: activity.projectId });
+      }
+    }
+
     return { message: "Atividade removida" };
   }
 }

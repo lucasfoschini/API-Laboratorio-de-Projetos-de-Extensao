@@ -8,6 +8,7 @@ import { postRoutes }          from "../modules/posts/post.routes";
 import { userRoutes }          from "../modules/users/user.routes";
 import { notificationRoutes }  from "../modules/notifications/notification.routes";
 import { activityRoutes }      from "../modules/projects/activity.routes";
+import { aiRoutes }            from "../modules/ai/ai.routes";
 
 export const routes = Router();
 
@@ -22,3 +23,4 @@ routes.use("/member-requests", memberRequestRoutes);
 routes.use("/posts",           postRoutes);
 routes.use("/users",           userRoutes);
 routes.use("/notifications",   notificationRoutes);
+routes.use("/ai",              aiRoutes);

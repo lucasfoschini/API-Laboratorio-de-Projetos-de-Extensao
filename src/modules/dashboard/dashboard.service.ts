@@ -117,7 +117,7 @@ export class DashboardService {
   }
 
   async pendingRequests(userId: string) {
-    return prisma.memberRequest.findMany({
+    const requests = await prisma.memberRequest.findMany({
       where: { project: { ownerId: userId }, status: "PENDING" },
       include: {
         user:    { select: { id: true, name: true, email: true, avatar: true, department: true } },
@@ -125,6 +125,17 @@ export class DashboardService {
       },
       orderBy: { createdAt: "desc" },
     });
+
+    return Promise.all(requests.map(async (request) => ({
+      ...request,
+      rejectionCount: await prisma.notification.count({
+        where: {
+          userId: request.userId,
+          projectId: request.projectId,
+          type: "REQUEST_REJECTED",
+        },
+      }),
+    })));
   }
 
   async mySubscriptions(userId: string) {

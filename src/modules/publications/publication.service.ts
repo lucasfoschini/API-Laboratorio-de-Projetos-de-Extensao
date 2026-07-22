@@ -91,24 +91,6 @@ export class PublicationService {
     invalidateByPrefix("publications:list");
     sseManager.broadcast("global_publications_updated", { projectId: input.projectId });
 
-    // Se for aluno, notifica o professor do projeto
-    if (!approved && project.owner) {
-      await NotificationService.create({
-        userId:    project.owner.id,
-        type:      "PUBLICATION_PENDING",
-        message:   `Nova publicação "${pub.title}" aguardando sua aprovação no projeto "${project.title}"`,
-        projectId: input.projectId,
-      });
-      if (project.owner.email) {
-        await sendPublicationEmail(
-          project.owner.email,
-          project.owner.name,
-          `Nova publicação aguardando aprovação — ${project.title}`,
-          `Uma nova publicação <strong>"${pub.title}"</strong> foi enviada para o projeto <strong>"${project.title}"</strong> e aguarda sua aprovação.`,
-        );
-      }
-    }
-
     // Se já aprovada (professor criou), notifica subscribers
     if (approved) {
       const subscribers = await prisma.subscription.findMany({
@@ -225,6 +207,18 @@ export class PublicationService {
         );
       }
     }
+
+    // Coautores também precisam receber o resultado da aprovação.
+    await Promise.all(
+      pub.authors
+        .filter((author) => author.id !== pub.userId)
+        .map((author) => NotificationService.create({
+          userId: author.id,
+          type: "PUBLICATION_APPROVED",
+          message: `A publicação "${pub.title}" da qual você participa foi aprovada no projeto "${pub.project.title}".`,
+          projectId: pub.projectId,
+        })),
+    );
 
     // Notifica e envia email para quem acompanha o projeto
     const subscribers = await prisma.subscription.findMany({

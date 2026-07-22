@@ -45,15 +45,15 @@ export class MemberRequestService {
     if (!project) throw new HttpError(404, "Projeto não encontrado");
     if (project.ownerId === userId) throw new HttpError(400, "Você é o criador deste projeto");
 
+    // Bloqueia solicitações após a data limite de inscrição
+    if (project.applicationDeadline && new Date() > new Date(project.applicationDeadline)) {
+      throw new HttpError(403, "O prazo para solicitações de entrada neste projeto já encerrou");
+    }
+
     const isMember = await prisma.project.findFirst({
       where: { id: projectId, members: { some: { id: userId } } },
     });
     if (isMember) throw new HttpError(409, "Você já faz parte deste grupo");
-
-    const existing = await prisma.memberRequest.findUnique({
-      where: { projectId_userId: { projectId, userId } },
-    });
-    if (existing) throw new HttpError(409, "Você já enviou uma solicitação para este projeto");
 
     // Busca o nome do solicitante para a notificação e e-mail
     const requester = await prisma.user.findUnique({
@@ -61,10 +61,42 @@ export class MemberRequestService {
       select: { name: true },
     });
 
-    const result = await prisma.memberRequest.create({
-      data:    { projectId, userId, message },
-      include: INCLUDE,
+    const currentRequest = await prisma.memberRequest.findFirst({
+      where: { projectId, userId },
     });
+
+    let result;
+    if (currentRequest?.status === MemberRequestStatus.REJECTED) {
+      const rejectionCount = await prisma.notification.count({
+        where: {
+          userId,
+          projectId,
+          type: "REQUEST_REJECTED",
+        },
+      });
+
+      if (rejectionCount >= 3) {
+        throw new HttpError(429, "Você já foi recusado 3 vezes neste projeto e não pode solicitar novamente");
+      }
+
+      result = await prisma.$transaction(async (tx) => {
+        await tx.memberRequest.deleteMany({
+          where: { projectId, userId },
+        });
+
+        return tx.memberRequest.create({
+          data:    { projectId, userId, message },
+          include: INCLUDE,
+        });
+      });
+    } else if (currentRequest) {
+      throw new HttpError(409, "Você já enviou uma solicitação para este projeto");
+    } else {
+      result = await prisma.memberRequest.create({
+        data:    { projectId, userId, message },
+        include: INCLUDE,
+      });
+    }
 
     // Envia e-mail para o dono do projeto
     if (project.owner?.email) {

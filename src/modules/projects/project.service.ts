@@ -142,8 +142,35 @@ export class ProjectService {
     return toResponse(project);
   }
 
-  async getAll(page = 1, limit = 12) {
-    const cacheKey = `projects:list:${page}:${limit}`;
+  async getAll(page = 1, limit = 12, statusFilter?: string) {
+    const now = new Date();
+
+    // Constrói o where do Prisma baseado no filtro de status,
+    // mantendo consistência com a lógica visual do ProjectCard:
+    //   open        = ABERTO + deadline futuro (ou sem deadline)
+    //   in_progress = EM_ANDAMENTO  OU  ABERTO com deadline já passado
+    //   completed   = FINALIZADO
+    let where: any = {};
+    if (statusFilter === "open") {
+      where = {
+        status: "ABERTO",
+        OR: [
+          { applicationDeadline: null },
+          { applicationDeadline: { gt: now } },
+        ],
+      };
+    } else if (statusFilter === "in_progress") {
+      where = {
+        OR: [
+          { status: "EM_ANDAMENTO" },
+          { status: "ABERTO", applicationDeadline: { lte: now } },
+        ],
+      };
+    } else if (statusFilter === "completed") {
+      where = { status: "FINALIZADO" };
+    }
+
+    const cacheKey = `projects:list:${page}:${limit}:${statusFilter ?? "all"}`;
     return cached(cacheKey, 60, async () => {
       const skip = (page - 1) * limit;
 
@@ -156,8 +183,8 @@ export class ProjectService {
       } as const;
 
       const [projects, total] = await Promise.all([
-        prisma.project.findMany({ select, orderBy: { createdAt: "desc" }, skip, take: limit }),
-        prisma.project.count(),
+        prisma.project.findMany({ where, select, orderBy: { createdAt: "desc" }, skip, take: limit }),
+        prisma.project.count({ where }),
       ]);
 
       return {

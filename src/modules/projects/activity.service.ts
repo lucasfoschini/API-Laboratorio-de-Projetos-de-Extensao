@@ -141,9 +141,15 @@ export class ActivityService {
     const isResponsible = activity.responsibles.some((r) => r.id === userId);
     if (!isOwner && !isResponsible) throw new HttpError(403, "Sem permissão para alterar esta atividade");
 
+    const markingDone   = !activity.done;
+    const isLate        = markingDone && new Date() > new Date(activity.dueDate);
+
     const updated = await prisma.activity.update({
       where:   { id: activityId },
-      data:    { done: !activity.done },
+      data:    {
+        done:          markingDone,
+        completedLate: markingDone ? isLate : false,
+      },
       include: ACTIVITY_INCLUDE,
     });
 

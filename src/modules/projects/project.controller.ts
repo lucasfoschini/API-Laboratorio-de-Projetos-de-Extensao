@@ -12,9 +12,10 @@ export class ProjectController {
   }
   async getAll(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const page  = parseInt(String(req.query["page"]  ?? "1"));
-      const limit = parseInt(String(req.query["limit"] ?? "12"));
-      res.json(await svc.getAll(page, limit));
+      const page   = parseInt(String(req.query["page"]   ?? "1"));
+      const limit  = parseInt(String(req.query["limit"]  ?? "12"));
+      const status = req.query["status"] as string | undefined;
+      res.json(await svc.getAll(page, limit, status));
     } catch (e) { next(e); }
   }
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
